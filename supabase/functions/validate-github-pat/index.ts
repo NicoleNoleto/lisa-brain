@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
   const user = await getJwtUser(req);
   if (!user) return errorResponse("Auth obrigatória", 401);
 
-  const pat = await getSecret("GITHUB_BRAIN_TOKEN");
+  const pat = await getSecret("GITHUB_BRAIN_TOKEN", { fresh: true });
   if (!pat) return jsonResponse({ ok: false, error: "token_nao_configurado (GITHUB_BRAIN_TOKEN ausente no Vault)" });
 
   // brain_repo_url: owner -> global (user_id null) -> qualquer (single-tenant),

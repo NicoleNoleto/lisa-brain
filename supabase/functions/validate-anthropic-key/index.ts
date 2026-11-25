@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
   const user = await getJwtUser(req);
   if (!user) return errorResponse("Auth obrigatória", 401);
 
-  const key = await getSecret("ANTHROPIC_API_KEY");
+  const key = await getSecret("ANTHROPIC_API_KEY", { fresh: true });
   if (!key) return jsonResponse({ ok: false, error: "chave_nao_configurada (ANTHROPIC_API_KEY ausente no Vault)" });
 
   let resp: Response;

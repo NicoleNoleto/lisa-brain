@@ -11,10 +11,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { value: string; exp: number }>();
 
-export async function getSecret(name: string): Promise<string | undefined> {
+// opts.fresh: ignora o cache (use em validações logo após o usuário trocar a chave).
+export async function getSecret(name: string, opts: { fresh?: boolean } = {}): Promise<string | undefined> {
   const now = Date.now();
   const cached = cache.get(name);
-  if (cached && cached.exp > now) return cached.value;
+  if (!opts.fresh && cached && cached.exp > now) return cached.value;
 
   // 1) Vault via RPC (service-role).
   try {

@@ -358,6 +358,8 @@ async function handleOfficialWebhook(body: any, supabase: any, corsHeaders: any)
         }
 
         // Trigger message-grouper in background (non-blocking)
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         EdgeRuntime.waitUntil(
           fetch(`${supabaseUrl}/functions/v1/message-grouper`, {
             method: 'POST',
@@ -372,18 +374,15 @@ async function handleOfficialWebhook(body: any, supabase: any, corsHeaders: any)
 
       return new Response(JSON.stringify({ status: 'processed' }), { 
         status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
-    }
-
-    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   } catch (error) {
     console.error('[Webhook] Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
-});
+}
