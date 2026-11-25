@@ -200,7 +200,7 @@ async function sendViaEvolution(
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${connection.evolution_api_token}`,
+      "apikey": connection.evolution_api_token, // Official Evolution API uses "apikey" header
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),

@@ -81,11 +81,11 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
     try {
       // Call Evolution API to generate QR code
       const response = await fetch(
-        `${serverUrl}/instance/${instanceName}/qr`,
+        `${serverUrl}/instance/connect/${instanceName}`,
         {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${apiToken}`,
+            'apikey': apiToken, // Official Evolution API uses "apikey" header
             'Content-Type': 'application/json',
           },
         }
@@ -100,8 +100,8 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
 
       const data = await response.json();
 
-      if (data.qr) {
-        onQrCodeChange(data.qr);
+      if (data.base64) {
+        onQrCodeChange(data.base64);
         onConnectionStatusChange('qr_pending');
 
         // Start polling to check connection status
@@ -133,11 +133,11 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
 
       try {
         const response = await fetch(
-          `${serverUrl}/instance/${instanceName}/status`,
+          `${serverUrl}/instance/connectionState/${instanceName}`,
           {
             method: 'GET',
             headers: {
-              'Authorization': `Bearer ${apiToken}`,
+              'apikey': apiToken, // Official Evolution API uses "apikey" header
               'Content-Type': 'application/json',
             },
           }
@@ -147,7 +147,8 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
 
         const data = await response.json();
 
-        if (data.status === 'connected' || data.connected) {
+        // Check both formats: Evolution API returns state: "open"
+        if (data.instance?.state === 'open' || data.state === 'open') {
           onConnectionStatusChange('connected');
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
