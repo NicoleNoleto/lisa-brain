@@ -335,10 +335,10 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         status: overallStatus,
-        message: hasErrors 
+        message: hasErrors
           ? 'Sistema precisa de configuração'
-          : hasWarnings 
-          ? 'Sistema funcional com algumas pendências' 
+          : hasRequiredWarnings
+          ? 'Sistema funcional com algumas pendências'
           : 'Sistema totalmente configurado',
         results,
         timestamp: new Date().toISOString(),
