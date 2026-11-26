@@ -19,7 +19,7 @@ export interface OnboardingStatus {
   hasSeenWizard: boolean;
   isAdmin: boolean;
   refetch: () => Promise<void>;
-  markWizardSeen: () => void;
+  markWizardSeen: () => Promise<void>;
   resetWizard: () => void;
 }
 
@@ -208,10 +208,18 @@ export function useOnboardingStatus(): OnboardingStatus {
 
     // Also persist to database to survive localStorage clear
     try {
-      await supabase
+      const { data: settings } = await supabase
         .from('nina_settings')
-        .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
-        .eq('id', (await supabase.from('nina_settings').select('id').limit(1).maybeSingle()).data?.id);
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+
+      if (settings?.id) {
+        await supabase
+          .from('nina_settings')
+          .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+          .eq('id', settings.id);
+      }
     } catch (err) {
       console.error('Error saving onboarding status to database:', err);
     }

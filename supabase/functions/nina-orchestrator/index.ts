@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBrainConfig, type BrainConfig } from "../_shared/brain.ts";
+import { getSecret } from "../_shared/secrets.ts";
 import {
   createAppointmentFromAI,
   rescheduleAppointmentFromAI,
@@ -128,7 +129,9 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY')!;
+  // Prefer the tenant's current key in Supabase Vault. The environment secret
+  // remains only as a backwards-compatible fallback inside getSecret().
+  const anthropicApiKey = await getSecret('ANTHROPIC_API_KEY', { fresh: true });
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
@@ -679,7 +682,7 @@ async function processQueueItem(
   // Get AI config before building request body (needed for tool_choice format)
   const anthropicConfig = getBrainConfig(
     { ...settings, brain_provider: 'anthropic' },
-    { anthropicModel: aiSettings.model }
+    { anthropicModel: aiSettings.model, anthropicApiKey }
   );
 
   // Build request body for Anthropic (system prompt as top-level parameter)
@@ -721,9 +724,26 @@ async function processQueueItem(
   }
 
   const aiData = await aiResponse.json();
+  // Anthropic returns `content: [{ type: 'text', text: '...' }]`, while
+  // OpenAI-compatible providers return `choices[0].message.content`.
+  // Normalize both formats before building the outbound WhatsApp message.
   const aiMessage = aiData.choices?.[0]?.message;
-  let aiContent = aiMessage?.content || '';
-  const toolCalls = aiMessage?.tool_calls || [];
+  const anthropicText = Array.isArray(aiData.content)
+    ? aiData.content
+        .filter((part: any) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part: any) => part.text)
+        .join('\n')
+    : typeof aiData.content === 'string'
+      ? aiData.content
+      : '';
+  const openAiText = Array.isArray(aiMessage?.content)
+    ? aiMessage.content
+        .filter((part: any) => typeof part?.text === 'string')
+        .map((part: any) => part.text)
+        .join('\n')
+    : aiMessage?.content;
+  let aiContent = (anthropicText || openAiText || '').trim();
+  const toolCalls = aiMessage?.tool_calls || aiData.tool_calls || [];
 
   console.log('[Nina] AI response received, content length:', aiContent?.length || 0, ', tool_calls:', toolCalls.length);
 
@@ -831,10 +851,11 @@ async function processQueueItem(
     }
   }
 
-  // Fallback for empty AI response - use default greeting instead of throwing error
+  // Never send a generic greeting when the provider returned no usable content:
+  // that hides provider/parser failures and makes every message look identical.
   if (!aiContent) {
-    console.warn('[Nina] Empty AI response received, using fallback');
-    aiContent = 'Olá! Como posso ajudar você hoje? 😊';
+    console.error('[Nina] Empty AI response received:', JSON.stringify(aiData));
+    throw new Error('AI returned an empty response');
   }
 
   console.log('[Nina] Final response length:', aiContent.length);

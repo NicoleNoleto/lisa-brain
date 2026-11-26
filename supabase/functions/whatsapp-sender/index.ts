@@ -92,7 +92,7 @@ serve(async (req) => {
           // Buscar user_id da conversation para multi-tenancy
           const { data: conversation, error: convError } = await supabase
             .from('conversations')
-            .select('user_id')
+            .select('user_id, whatsapp_connection_id')
             .eq('id', item.conversation_id)
             .single();
 
@@ -104,21 +104,54 @@ serve(async (req) => {
           const userId = conversation.user_id;
 
           // Buscar settings do cache ou do banco com fallback triplo
-          const cacheKey = userId || 'global';
+          const cacheKey = conversation.whatsapp_connection_id || userId || 'global';
           let settings = settingsCache[cacheKey];
           if (!settings) {
             let settingsData = null;
 
-            // Try new whatsapp_connections table first
-            const { data: connection } = await supabase
-              .from('whatsapp_connections')
-              .select('*')
-              .eq('is_active', true)
-              .maybeSingle();
+            // Prefer the connection that originated the conversation. This is
+            // essential when Official and Evolution are both configured.
+            let connection = null;
+            if (conversation.whatsapp_connection_id) {
+              const { data } = await supabase
+                .from('whatsapp_connections')
+                .select('*')
+                .eq('id', conversation.whatsapp_connection_id)
+                .eq('is_active', true)
+                .maybeSingle();
+              connection = data;
+            }
+
+            // Owner-scoped fallback for legacy conversations without a link.
+            if (!connection && userId) {
+              const { data } = await supabase
+                .from('whatsapp_connections')
+                .select('*')
+                .eq('owner_user_id', userId)
+                .eq('is_active', true)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              connection = data;
+            }
+
+            // Single-tenant fallback: never use maybeSingle() across all rows,
+            // because Official + Evolution may both be active.
+            if (!connection) {
+              const { data } = await supabase
+                .from('whatsapp_connections')
+                .select('*')
+                .eq('is_active', true)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              connection = data;
+            }
 
             if (connection) {
               console.log('[Sender] Using whatsapp_connections for provider:', connection.provider);
               settingsData = {
+                connection_id: connection.id,
                 provider: connection.provider,
                 whatsapp_access_token: connection.official_access_token,
                 whatsapp_phone_number_id: connection.official_phone_number_id,
@@ -190,8 +223,8 @@ serve(async (req) => {
             settingsCache[cacheKey] = settings;
           }
 
-          await sendMessage(supabase, settings, item);
-          
+          const response = await sendMessage(supabase, settings, item);
+
           // Mark as completed
           console.log(`[Sender] Response from sendMessage:`, response);
           await supabase
@@ -273,6 +306,9 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     evolution_server_url: settings.evolution_server_url,
     evolution_instance_name: settings.evolution_instance_name,
     evolution_api_token: settings.evolution_api_token,
+    // Sender já validou as credenciais; não bloquear por flag de status possivelmente defasada.
+    evolution_connection_status: 'connected' as const,
+    id: settings.connection_id,
   };
 
   console.log(`[Sender] Sending via provider: ${connection.provider}`);
@@ -338,4 +374,6 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     .from('conversations')
     .update({ last_message_at: new Date().toISOString() })
     .eq('id', queueItem.conversation_id);
+
+  return response;
 }

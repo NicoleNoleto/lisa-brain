@@ -22,14 +22,16 @@ import { useOnboardingStatus } from './hooks/useOnboardingStatus';
 // Componente de Layout que envolve a aplicação principal
 const AppLayout: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { isComplete, hasSeenWizard, loading } = useOnboardingStatus();
+  const [hasShownOnce, setHasShownOnce] = useState(false);
+  const { isComplete, hasSeenWizard, loading, markWizardSeen } = useOnboardingStatus();
 
-  // Show wizard automatically on first load if not complete and never seen
+  // Show wizard automatically on first load ONLY if not complete and never seen
   useEffect(() => {
-    if (!loading && !isComplete && !hasSeenWizard) {
+    if (!loading && !isComplete && !hasSeenWizard && !hasShownOnce) {
       setShowOnboarding(true);
+      setHasShownOnce(true);
     }
-  }, [loading, isComplete, hasSeenWizard]);
+  }, [loading, isComplete, hasSeenWizard, hasShownOnce]);
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
@@ -50,7 +52,12 @@ const AppLayout: React.FC = () => {
 
       <OnboardingWizard 
         isOpen={showOnboarding} 
-        onClose={() => setShowOnboarding(false)} 
+        onClose={async () => {
+          // Closing the first-login wizard is also a deliberate dismissal.
+          // Persist it so it does not reopen on the next login/reload.
+          await markWizardSeen();
+          setShowOnboarding(false);
+        }}
       />
     </div>
   );

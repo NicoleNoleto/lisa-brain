@@ -174,7 +174,7 @@ async function sendViaOfficial(
  */
 function normalizePhoneNumber(phone: string): string {
   // Remove all non-digits
-  const cleaned = phone.replace(/\D/g, '');
+  let cleaned = phone.replace(/\D/g, '');
 
   // If already has country code (55), use as is
   if (cleaned.startsWith('55')) {
@@ -216,21 +216,25 @@ async function sendViaEvolution(
   mediaUrl?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const endpoint = messageType === "text" ? "/message/sendText" : "/message/sendAudio";
-  const url = `${connection.evolution_server_url}${endpoint}/${connection.evolution_instance_name}`;
+  const serverUrl = connection.evolution_server_url!.trim().replace(/\/+$/, "");
+  const instanceName = encodeURIComponent(connection.evolution_instance_name!.trim());
+  const url = `${serverUrl}${endpoint}/${instanceName}`;
   const normalizedNumber = normalizePhoneNumber(to);
+
+  if (messageType === "audio" && !mediaUrl) {
+    return { success: false, error: "Evolution audio message is missing media URL" };
+  }
 
   const body = messageType === "text"
     ? {
         number: normalizedNumber,
-        textMessage: {
-          text: message,
-        },
+        // Evolution API v2 expects text at the root of the payload.
+        text: message,
       }
     : {
         number: normalizedNumber,
-        audioMessage: {
-          media: mediaUrl,
-        },
+        // Evolution API v2 accepts a public URL or base64 in `audio`.
+        audio: mediaUrl,
       };
 
   console.log(`[Evolution] Original number: ${to} -> Normalized: ${normalizedNumber}`);
@@ -249,15 +253,27 @@ async function sendViaEvolution(
   console.log(`[Evolution] Response status: ${response.status}`);
 
   if (!response.ok) {
-    const error = await response.json();
+    const rawError = await response.text();
+    let error: any = rawError;
+    try {
+      error = rawError ? JSON.parse(rawError) : {};
+    } catch (_) {
+      // Keep the plain-text response when Evolution does not return JSON.
+    }
     console.error(`[Evolution] API error:`, error);
     return {
       success: false,
-      error: `Evolution API error: ${error.message || error.error?.message || response.statusText}`,
+      error: `Evolution API error (${response.status}): ${error.message || error.error?.message || rawError || response.statusText}`,
     };
   }
 
-  const result = await response.json();
+  const rawResult = await response.text();
+  let result: any = {};
+  try {
+    result = rawResult ? JSON.parse(rawResult) : {};
+  } catch (_) {
+    console.warn('[Evolution] Successful response was not JSON:', rawResult);
+  }
   console.log(`[Evolution] Success response:`, result);
   return {
     success: true,

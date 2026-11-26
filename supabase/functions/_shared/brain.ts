@@ -6,10 +6,10 @@
 // Mantido propositalmente flexível: o caminho primário é /v1/chat/completions; o
 // spike do Integrador pode refinar detalhes sem alterar este contrato.
 
-// Endpoint do Lovable AI Gateway (comportamento atual — não alterar).
-export const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+// Endpoint do Anthropic API
+export const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
-export type BrainProvider = "lovable" | "openclaw";
+export type BrainProvider = "openclaw" | "anthropic";
 
 export interface BrainConfig {
   provider: BrainProvider;
@@ -19,10 +19,10 @@ export interface BrainConfig {
 }
 
 export interface GetBrainConfigOptions {
-  // Modelo escolhido dinamicamente para o Lovable (via getModelSettings no orchestrator).
-  lovableModel?: string;
-  // API key do Lovable; default = env LOVABLE_API_KEY (mantém comportamento atual).
-  lovableApiKey?: string;
+  // Modelo escolhido dinamicamente para Anthropic
+  anthropicModel?: string;
+  // Chave resolvida pelo Vault; env continua sendo fallback de compatibilidade.
+  anthropicApiKey?: string;
 }
 
 // Normaliza a URL do OpenClaw para o endpoint OpenAI-compatible.
@@ -43,14 +43,10 @@ export function isOpenClawConfigured(settings: any): boolean {
  * Resolve a configuração do "cérebro" da Nina a partir de nina_settings.
  *
  * - provider 'openclaw': usa openclaw_gateway_url + openclaw_gateway_token + openclaw_model.
- * - provider 'lovable' (padrão): usa LOVABLE_AI_URL + LOVABLE_API_KEY + modelo dinâmico
- *   (lovableModel, vindo de getModelSettings) — comportamento idêntico ao atual.
- *
- * Se 'openclaw' estiver selecionado mas mal configurado, cai para 'lovable' (o
- * orchestrator ainda tem o fallback de runtime para falhas de rede/timeout/5xx).
+ * - provider 'anthropic' (padrão): usa ANTHROPIC_API_URL + ANTHROPIC_API_KEY.
  */
 export function getBrainConfig(settings: any, opts: GetBrainConfigOptions = {}): BrainConfig {
-  const provider: BrainProvider = settings?.brain_provider === "openclaw" ? "openclaw" : "lovable";
+  const provider: BrainProvider = settings?.brain_provider === "openclaw" ? "openclaw" : "anthropic";
 
   if (provider === "openclaw" && isOpenClawConfigured(settings)) {
     return {
@@ -61,11 +57,11 @@ export function getBrainConfig(settings: any, opts: GetBrainConfigOptions = {}):
     };
   }
 
-  // Padrão / fallback de configuração: Lovable AI.
+  // Padrão: Anthropic (Claude Haiku)
   return {
-    provider: "lovable",
-    url: LOVABLE_AI_URL,
-    apiKey: opts.lovableApiKey ?? Deno.env.get("LOVABLE_API_KEY") ?? "",
-    model: opts.lovableModel ?? "google/gemini-2.5-flash",
+    provider: "anthropic",
+    url: ANTHROPIC_API_URL,
+    apiKey: opts.anthropicApiKey ?? Deno.env.get("ANTHROPIC_API_KEY") ?? "",
+    model: opts.anthropicModel ?? "claude-haiku-4-5",
   };
 }

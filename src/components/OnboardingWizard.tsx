@@ -657,6 +657,31 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
           }
         }
 
+        // Only one WhatsApp provider may be active for an owner. Without this,
+        // the sender can see both Official and Evolution rows and route
+        // messages ambiguously.
+        const { data: activeConnection } = await (supabase
+          .from('whatsapp_connections') as any)
+          .select('id')
+          .eq('owner_user_id', user.id)
+          .eq('provider', whatsappProvider)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (activeConnection?.id) {
+          const { error: deactivateError } = await (supabase
+            .from('whatsapp_connections') as any)
+            .update({ is_active: false })
+            .eq('owner_user_id', user.id)
+            .neq('id', activeConnection.id);
+
+          if (deactivateError) {
+            console.error('[OnboardingWizard] Error deactivating other WhatsApp connections:', deactivateError);
+            return false;
+          }
+        }
+
         // Register Evolution webhook if provider is Evolution and connected
         if (whatsappProvider === 'evolution' && evolutionConnectionStatus === 'connected') {
           console.log('[OnboardingWizard] Step 4.6: Registering Evolution webhook...');
@@ -784,8 +809,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
   };
 
   const handleComplete = async () => {
-    await saveSettings();
-    markWizardSeen();
+    const saved = await saveSettings();
+    if (!saved) return;
+
+    await markWizardSeen();
     fireConfetti();
     toast.success('Configuração concluída! Bem-vindo ao sistema.');
     onClose();
