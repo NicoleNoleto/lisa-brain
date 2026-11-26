@@ -193,14 +193,16 @@ serve(async (req) => {
           await sendMessage(supabase, settings, item);
           
           // Mark as completed
+          console.log(`[Sender] Response from sendMessage:`, response);
           await supabase
             .from('send_queue')
-            .update({ 
-              status: 'completed', 
-              sent_at: new Date().toISOString() 
+            .update({
+              status: 'completed',
+              error_message: `Evolution Response: ${JSON.stringify(response)}`,
+              sent_at: new Date().toISOString()
             })
             .eq('id', item.id);
-          
+
           totalSent++;
           console.log(`[Sender] Successfully sent message ${item.id} (${totalSent} total)`);
         } catch (error) {
