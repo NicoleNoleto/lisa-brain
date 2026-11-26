@@ -109,6 +109,12 @@ export function useOnboardingStatus(): OnboardingStatus {
         .limit(1)
         .maybeSingle();
 
+      // Fetch WhatsApp connections (new table)
+      const { data: connections } = await (supabase
+        .from('whatsapp_connections') as any)
+        .select('*')
+        .limit(10);
+
       if (settings) {
         setSteps(prev => prev.map(step => {
           switch (step.id) {
@@ -120,10 +126,13 @@ export function useOnboardingStatus(): OnboardingStatus {
             case 'whatsapp_provider':
               // Completo se tiver WhatsApp Oficial OU Evolution configurado
               const hasOfficialWhatsApp = !!(settings.whatsapp_access_token && settings.whatsapp_phone_number_id && (settings as any).whatsapp_business_account_id);
-              const hasEvolution = !!(settings as any).evolution_instance_name || !!(settings as any).evolution_api_key;
+              const hasEvolutionLegacy = !!(settings as any).evolution_instance_name || !!(settings as any).evolution_api_key;
+              const hasEvolutionConnected = connections?.some((conn: any) =>
+                conn.provider === 'evolution' && conn.evolution_connection_status === 'connected'
+              );
               return {
                 ...step,
-                isComplete: hasOfficialWhatsApp || hasEvolution,
+                isComplete: hasOfficialWhatsApp || hasEvolutionLegacy || hasEvolutionConnected,
               };
             case 'agent':
               return {
