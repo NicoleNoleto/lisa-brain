@@ -1,3 +1,5 @@
 # Catálogo de produtos/soluções
 
-_(Nenhum produto cadastrado.)_
+## Automações
+
+## Sites
