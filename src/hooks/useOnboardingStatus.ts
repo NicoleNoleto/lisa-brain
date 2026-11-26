@@ -116,6 +116,12 @@ export function useOnboardingStatus(): OnboardingStatus {
         .limit(1)
         .maybeSingle();
 
+      // Sync database status with localStorage if not already marked
+      if (settings?.onboarding_completed && !hasSeenWizard) {
+        localStorage.setItem(WIZARD_SEEN_KEY, 'true');
+        setHasSeenWizard(true);
+      }
+
       // Fetch WhatsApp connections (new table)
       const { data: connections } = await (supabase
         .from('whatsapp_connections') as any)
@@ -193,12 +199,22 @@ export function useOnboardingStatus(): OnboardingStatus {
     fetchStatus();
   }, [fetchStatus]);
 
-  const markWizardSeen = useCallback(() => {
+  const markWizardSeen = useCallback(async () => {
     localStorage.setItem(WIZARD_SEEN_KEY, 'true');
     setHasSeenWizard(true);
-    setSteps(prev => prev.map(step => 
+    setSteps(prev => prev.map(step =>
       step.id === 'finish' ? { ...step, isComplete: true } : step
     ));
+
+    // Also persist to database to survive localStorage clear
+    try {
+      await supabase
+        .from('nina_settings')
+        .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+        .eq('id', (await supabase.from('nina_settings').select('id').limit(1).maybeSingle()).data?.id);
+    } catch (err) {
+      console.error('Error saving onboarding status to database:', err);
+    }
   }, []);
 
   const resetWizard = useCallback(() => {
