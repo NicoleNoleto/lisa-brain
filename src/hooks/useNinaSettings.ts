@@ -96,27 +96,49 @@ export function useNinaSettings(): UseNinaSettingsResult {
 
   const save = useCallback(
     async (patch: Partial<NinaSettingsForm>): Promise<boolean> => {
-      if (!settingsId) {
-        setError('Configurações da Nina não encontradas');
-        return false;
-      }
       setSaving(true);
       try {
         const next = { ...values, ...patch };
-        const { error: updateError } = await supabase
-          .from('nina_settings')
-          .update({
-            company_name: next.company_name || null,
-            sdr_name: next.sdr_name || null,
-            system_prompt_override: next.system_prompt_override || null,
-            brain_repo_url: next.brain_repo_url || null,
-            brain_identity: next.brain_identity as unknown as Json,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', settingsId);
 
-        if (updateError) throw updateError;
+        // Se não existe linha, criar uma
+        let currentSettingsId = settingsId;
+        if (!currentSettingsId) {
+          const { data: inserted, error: insertError } = await supabase
+            .from('nina_settings')
+            .insert({
+              company_name: next.company_name || null,
+              sdr_name: next.sdr_name || null,
+              system_prompt_override: next.system_prompt_override || null,
+              brain_repo_url: next.brain_repo_url || null,
+              brain_identity: next.brain_identity as unknown as Json,
+            })
+            .select('id')
+            .single();
+
+          if (insertError) throw insertError;
+          if (!inserted) throw new Error('Falha ao criar configurações');
+
+          currentSettingsId = inserted.id;
+          setSettingsId(currentSettingsId);
+        } else {
+          // Se já existe, fazer update
+          const { error: updateError } = await supabase
+            .from('nina_settings')
+            .update({
+              company_name: next.company_name || null,
+              sdr_name: next.sdr_name || null,
+              system_prompt_override: next.system_prompt_override || null,
+              brain_repo_url: next.brain_repo_url || null,
+              brain_identity: next.brain_identity as unknown as Json,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', currentSettingsId);
+
+          if (updateError) throw updateError;
+        }
+
         setValues(next);
+        setError(null);
         return true;
       } catch (err) {
         console.error('[useNinaSettings] Erro ao salvar:', err);
