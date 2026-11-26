@@ -1,6 +1,6 @@
 # Identidade — DBX
 
-- **Persona:** Nina (SDR consultiva)
+- **Persona:** Lisa (SDR consultiva)
 - **Empresa:** DBX
 
 ## Instruções adicionais
