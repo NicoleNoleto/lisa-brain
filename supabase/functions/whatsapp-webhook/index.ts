@@ -56,12 +56,21 @@ serve(async (req) => {
 
       // Detect which provider sent this webhook and route accordingly
       // Official WhatsApp API: has entry[0].changes[0].value.messages
-      // Evolution API: different format (to be implemented)
+      // Evolution API: has event property at top level
 
-      // For now, assume Official API (most common case)
-      // In future, add Evolution API detection based on headers or payload structure
-
-      return await handleOfficialWebhook(body, supabase, corsHeaders);
+      if (body.event && body.instance) {
+        // Evolution API format detected
+        return await handleEvolutionWebhook(body, supabase, corsHeaders);
+      } else if (body.entry?.[0]?.changes?.[0]?.value) {
+        // Official WhatsApp API format detected
+        return await handleOfficialWebhook(body, supabase, corsHeaders);
+      } else {
+        console.log('[Webhook] Unknown webhook format, ignoring');
+        return new Response(JSON.stringify({ status: 'ignored' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
     }
 
     return new Response(JSON.stringify({ status: 'error' }), {
@@ -372,13 +381,247 @@ async function handleOfficialWebhook(body: any, supabase: any, corsHeaders: any)
         );
       }
 
-      return new Response(JSON.stringify({ status: 'processed' }), { 
-        status: 200, 
+      return new Response(JSON.stringify({ status: 'processed' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
 
   } catch (error) {
     console.error('[Webhook] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Handler for Evolution API webhooks
+async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any) {
+  try {
+    console.log('[Webhook] Evolution event received:', body.event);
+
+    // Evolution webhook format:
+    // { event: 'messages.upsert', instance: 'instance-name', data: {...} }
+    const { event, instance, data } = body;
+
+    if (event !== 'messages.upsert' || !data?.messages) {
+      console.log('[Webhook] Ignoring Evolution event:', event);
+      return new Response(JSON.stringify({ status: 'ignored' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const GROUPING_DELAY_MS = 10000;
+    const messages = data.messages;
+
+    // Find the connection for this Evolution instance
+    const { data: connection } = await supabase
+      .from('whatsapp_connections')
+      .select('*')
+      .eq('provider', 'evolution')
+      .eq('evolution_instance_name', instance)
+      .maybeSingle();
+
+    if (!connection) {
+      console.warn('[Webhook] Evolution instance not found:', instance);
+      return new Response(JSON.stringify({ status: 'instance_not_found' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const processAfter = new Date(Date.now() + GROUPING_DELAY_MS).toISOString();
+
+    for (const message of messages) {
+      // Evolution format: fromMe: false = incoming, fromMe: true = outgoing
+      if (message.fromMe) {
+        console.log('[Webhook] Ignoring outgoing message from Evolution');
+        continue;
+      }
+
+      const phoneNumber = message.from?.replace('@s.whatsapp.net', '');
+      const contactName = message.pushName || null;
+
+      if (!phoneNumber) {
+        console.warn('[Webhook] Evolution message missing phone number:', message);
+        continue;
+      }
+
+      // 1. Get or create contact
+      let { data: contact } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('phone_number', phoneNumber)
+        .maybeSingle();
+
+      if (!contact) {
+        const { data: newContact, error: contactError } = await supabase
+          .from('contacts')
+          .insert({
+            phone_number: phoneNumber,
+            whatsapp_id: message.from,
+            name: contactName,
+            call_name: contactName?.split(' ')[0] || null,
+            user_id: null
+          })
+          .select()
+          .single();
+
+        if (contactError) {
+          console.error('[Webhook] Error creating contact:', contactError);
+          continue;
+        }
+        contact = newContact;
+        console.log('[Webhook] Created new Evolution contact:', contact.id);
+      } else {
+        const updates: any = { last_activity: new Date().toISOString() };
+        if (contactName && !contact.name) {
+          updates.name = contactName;
+          updates.call_name = contactName.split(' ')[0];
+        }
+        await supabase
+          .from('contacts')
+          .update(updates)
+          .eq('id', contact.id);
+      }
+
+      // 2. Get or create conversation
+      let { data: conversation } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!conversation) {
+        const { data: newConversation, error: convError } = await supabase
+          .from('conversations')
+          .insert({
+            contact_id: contact.id,
+            status: 'nina',
+            is_active: true,
+            user_id: null
+          })
+          .select()
+          .single();
+
+        if (convError) {
+          console.error('[Webhook] Error creating conversation:', convError);
+          continue;
+        }
+        conversation = newConversation;
+        console.log('[Webhook] Created new Evolution conversation:', conversation.id);
+      }
+
+      // 3. Determine message content and type
+      let messageContent = '';
+      let messageType = 'text';
+      let mediaType = null;
+
+      if (message.body) {
+        messageContent = message.body;
+        messageType = 'text';
+      } else if (message.image) {
+        messageContent = '[imagem recebida]';
+        messageType = 'image';
+        mediaType = 'image';
+      } else if (message.audio) {
+        messageContent = '[áudio - processando transcrição...]';
+        messageType = 'audio';
+        mediaType = 'audio';
+      } else if (message.video) {
+        messageContent = '[vídeo recebido]';
+        messageType = 'video';
+        mediaType = 'video';
+      } else if (message.document) {
+        messageContent = message.document.filename || '[documento recebido]';
+        messageType = 'document';
+        mediaType = 'document';
+      } else {
+        messageContent = '[mensagem recebida]';
+      }
+
+      // 4. Create message
+      const { data: dbMessage, error: msgError } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversation.id,
+          whatsapp_message_id: message.id,
+          content: messageContent,
+          type: messageType,
+          from_type: 'user',
+          status: 'sent',
+          media_type: mediaType,
+          sent_at: message.timestamp ? new Date(message.timestamp * 1000).toISOString() : new Date().toISOString(),
+          metadata: {
+            original_type: message.type,
+            evolution_message_id: message.id
+          }
+        })
+        .select()
+        .single();
+
+      if (msgError) {
+        if (msgError.code === '23505') {
+          console.log('[Webhook] Duplicate Evolution message ignored:', message.id);
+          continue;
+        }
+        console.error('[Webhook] Error creating message:', msgError);
+        continue;
+      }
+
+      console.log('[Webhook] Created Evolution message:', dbMessage.id);
+
+      // 5. Update conversation last_message_at
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversation.id);
+
+      // 6. Enqueue for message grouping
+      const { error: queueError } = await supabase
+        .from('message_grouping_queue')
+        .insert({
+          whatsapp_message_id: message.id,
+          phone_number_id: connection.evolution_instance_name,
+          message_id: dbMessage.id,
+          message_data: message,
+          contacts_data: null,
+          process_after: processAfter
+        });
+
+      if (queueError) {
+        if (queueError.code === '23505') {
+          console.log('[Webhook] Duplicate queue entry ignored');
+        } else {
+          console.error('[Webhook] Queue insert error:', queueError);
+        }
+      }
+    }
+
+    // Trigger message-grouper
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    EdgeRuntime.waitUntil(
+      fetch(`${supabaseUrl}/functions/v1/message-grouper`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'whatsapp-webhook-evolution' })
+      }).catch(err => console.error('[Webhook] Error triggering message-grouper:', err))
+    );
+
+    return new Response(JSON.stringify({ status: 'processed' }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('[Webhook] Evolution handler error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,

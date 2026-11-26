@@ -258,8 +258,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
           setSdrName(data.sdr_name || '');
 
           // WhatsApp - Load from new whatsapp_connections table (with fallback to legacy nina_settings)
-          const { data: connections } = await supabase
-            .from('whatsapp_connections')
+          const { data: connections } = await (supabase
+            .from('whatsapp_connections') as any)
             .select('*')
             .order('created_at', { ascending: false })
             .limit(1);
@@ -454,13 +454,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         // Identity - trim whitespace
         company_name: companyName?.trim() || null,
         sdr_name: sdrName?.trim() || null,
-        
+
+        // Brain provider - always set to openclaw (Lovable removed)
+        brain_provider: 'openclaw' as const,
+
         // WhatsApp - trim whitespace
         whatsapp_access_token: accessToken?.trim() || null,
         whatsapp_phone_number_id: phoneNumberId?.trim() || null,
         whatsapp_business_account_id: businessAccountId?.trim() || null,
         whatsapp_verify_token: verifyToken?.trim() || null,
-        
+
         // Agent - use default prompt if empty
         system_prompt_override: systemPrompt?.trim() || DEFAULT_NINA_PROMPT,
         ai_model_mode: aiModelMode || 'flash',
@@ -565,16 +568,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         };
 
         // Check if connection already exists
-        const { data: existingConnection } = await supabase
-          .from('whatsapp_connections')
+        const { data: existingConnection } = await (supabase
+          .from('whatsapp_connections') as any)
           .select('id')
           .eq('provider', whatsappProvider)
           .maybeSingle();
 
         if (existingConnection) {
           // Update existing
-          const { error: updateError } = await supabase
-            .from('whatsapp_connections')
+          const { error: updateError } = await (supabase
+            .from('whatsapp_connections') as any)
             .update(whatsappConnectionData)
             .eq('id', existingConnection.id);
 
@@ -585,14 +588,37 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
           }
         } else {
           // Insert new
-          const { error: insertError } = await supabase
-            .from('whatsapp_connections')
+          const { error: insertError } = await (supabase
+            .from('whatsapp_connections') as any)
             .insert(whatsappConnectionData);
 
           if (insertError) {
             console.error('[OnboardingWizard] ❌ Error inserting WhatsApp connection:', insertError);
           } else {
             console.log('[OnboardingWizard] ✓ WhatsApp connection created');
+          }
+        }
+
+        // Register Evolution webhook if provider is Evolution and connected
+        if (whatsappProvider === 'evolution' && evolutionConnectionStatus === 'connected') {
+          console.log('[OnboardingWizard] Step 4.6: Registering Evolution webhook...');
+          try {
+            const webhookResponse = await supabase.functions.invoke('register-evolution-webhook', {
+              body: {
+                evolutionServerUrl: evolutionServerUrl?.trim(),
+                evolutionInstanceName: evolutionInstanceName?.trim(),
+                evolutionApiToken: evolutionApiToken?.trim(),
+              },
+            });
+
+            if (webhookResponse.error) {
+              console.error('[OnboardingWizard] ❌ Error registering webhook:', webhookResponse.error);
+              toast.error('Aviso: webhook não foi registrado em Evolution. Contatos inbound podem não aparecer.');
+            } else {
+              console.log('[OnboardingWizard] ✓ Evolution webhook registered');
+            }
+          } catch (err) {
+            console.error('[OnboardingWizard] ❌ Exception registering webhook:', err);
           }
         }
       }
