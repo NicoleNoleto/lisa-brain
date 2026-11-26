@@ -61,7 +61,9 @@ serve(async (req) => {
       if (body.event && body.instance) {
         // Evolution API format detected
         // Route to specific handler based on event type
-        if (body.event.startsWith('contacts.')) {
+        if (body.event === 'connection.update') {
+          return await handleEvolutionConnectionUpdate(body, supabase, corsHeaders);
+        } else if (body.event.startsWith('contacts.')) {
           return await handleEvolutionContactEvent(body, supabase, corsHeaders);
         } else {
           return await handleEvolutionWebhook(body, supabase, corsHeaders);
@@ -505,6 +507,7 @@ async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any
           .from('conversations')
           .insert({
             contact_id: contact.id,
+            whatsapp_connection_id: connection.id,
             status: 'nina',
             is_active: true,
             user_id: null
@@ -735,6 +738,60 @@ async function handleEvolutionContactEvent(body: any, supabase: any, corsHeaders
     );
   } catch (error) {
     console.error('[Webhook] Contact event handler error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Handler for Evolution API connection status updates
+async function handleEvolutionConnectionUpdate(body: any, supabase: any, corsHeaders: any) {
+  try {
+    console.log('[Webhook] Evolution connection update received:', body.event);
+
+    const { instance, data } = body;
+
+    if (!instance || !data?.connection) {
+      console.warn('[Webhook] Connection update missing required fields');
+      return new Response(JSON.stringify({ status: 'ignored' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Map Evolution state to our status
+    // { data: { connection: { state: "open"|"closed", ... } } }
+    const evolutionState = data.connection.state;
+    const newStatus = (evolutionState === 'open' || evolutionState === 'connected') ? 'connected' : 'disconnected';
+
+    console.log(`[Webhook] Connection update: ${instance} → ${newStatus}`);
+
+    // Update whatsapp_connections table
+    const { error } = await supabase
+      .from('whatsapp_connections')
+      .update({
+        evolution_connection_status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('evolution_instance_name', instance);
+
+    if (error) {
+      console.error('[Webhook] Connection update failed:', error);
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`[Webhook] ✓ Connection status updated: ${instance}`);
+
+    return new Response(
+      JSON.stringify({ status: 'processed', instance, newStatus }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('[Webhook] Connection update handler error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
