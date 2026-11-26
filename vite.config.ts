@@ -1,7 +1,6 @@
 import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
-import { componentTagger } from "lovable-tagger";
 
 // Vite SPA config. Secrets (GEMINI_API_KEY, ANTHROPIC_API_KEY etc.) NÃO devem
 // vazar para o bundle — são lidas dentro das Supabase Edge Functions via
@@ -11,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

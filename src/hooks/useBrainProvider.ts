@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
-export type BrainProvider = 'lovable' | 'openclaw';
+export type BrainProvider = 'openclaw';
 
 interface UseBrainProviderResult {
   provider: BrainProvider;
@@ -19,7 +19,7 @@ interface UseBrainProviderResult {
  */
 export function useBrainProvider(): UseBrainProviderResult {
   const { user } = useAuth();
-  const [provider, setProviderState] = useState<BrainProvider>('lovable');
+  const [provider, setProviderState] = useState<BrainProvider>('openclaw');
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,7 +45,7 @@ export function useBrainProvider(): UseBrainProviderResult {
 
       if (data) {
         setSettingsId(data.id);
-        setProviderState(data.brain_provider === 'openclaw' ? 'openclaw' : 'lovable');
+        setProviderState('openclaw');
       }
     } catch (err) {
       console.error('[useBrainProvider] Erro ao carregar provedor:', err);

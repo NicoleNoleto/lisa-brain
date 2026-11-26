@@ -32,49 +32,49 @@ export function useOnboardingStatus(): OnboardingStatus {
   const [steps, setSteps] = useState<OnboardingStep[]>([
     {
       id: 'identity',
-      title: 'Identidade',
+      title: '1. Identidade',
       description: 'Configure o nome da empresa e do agente',
       isComplete: false,
       isRequired: true,
     },
     {
-      id: 'whatsapp',
-      title: 'WhatsApp',
-      description: 'Configure a API do WhatsApp Cloud',
+      id: 'whatsapp_provider',
+      title: '2. Conexão WhatsApp',
+      description: 'Escolha entre WhatsApp Oficial ou Evolution API',
       isComplete: false,
       isRequired: true,
     },
     {
       id: 'agent',
-      title: 'Agente',
+      title: '3. Agente',
       description: 'Configure o prompt e comportamento do agente',
       isComplete: false,
       isRequired: true,
     },
     {
       id: 'elevenlabs',
-      title: 'ElevenLabs',
+      title: '4. ElevenLabs',
       description: 'Configure respostas em áudio (opcional)',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'business_hours',
-      title: 'Horário',
+      title: '5. Horário Comercial',
       description: 'Configure o horário de atendimento',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'verification',
-      title: 'Verificação',
+      title: '6. Verificação',
       description: 'Verifique se o sistema está configurado',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'finish',
-      title: 'Finalização',
+      title: '7. Finalização',
       description: 'Revise e teste sua configuração',
       isComplete: false,
       isRequired: false,
@@ -117,15 +117,18 @@ export function useOnboardingStatus(): OnboardingStatus {
                 ...step,
                 isComplete: !!(settings.company_name && settings.sdr_name),
               };
-            case 'whatsapp':
+            case 'whatsapp_provider':
+              // Completo se tiver WhatsApp Oficial OU Evolution configurado
+              const hasOfficialWhatsApp = !!(settings.whatsapp_access_token && settings.whatsapp_phone_number_id && (settings as any).whatsapp_business_account_id);
+              const hasEvolution = !!(settings as any).evolution_instance_name || !!(settings as any).evolution_api_key;
               return {
                 ...step,
-                isComplete: !!(settings.whatsapp_access_token && settings.whatsapp_phone_number_id && (settings as any).whatsapp_business_account_id),
+                isComplete: hasOfficialWhatsApp || hasEvolution,
               };
             case 'agent':
               return {
                 ...step,
-                isComplete: !!(settings.company_name && settings.sdr_name),
+                isComplete: !!(settings.system_prompt_override),
               };
             case 'elevenlabs':
               return {
@@ -133,7 +136,7 @@ export function useOnboardingStatus(): OnboardingStatus {
                 isComplete: !!settings.elevenlabs_api_key,
               };
             case 'business_hours':
-              const isDefaultConfig = 
+              const isDefaultConfig =
                 settings.timezone === 'America/Sao_Paulo' &&
                 settings.business_hours_start === '09:00:00' &&
                 settings.business_hours_end === '18:00:00' &&
@@ -145,7 +148,7 @@ export function useOnboardingStatus(): OnboardingStatus {
             case 'verification':
               return {
                 ...step,
-                isComplete: !!(settings.company_name && settings.sdr_name && settings.whatsapp_access_token && settings.system_prompt_override),
+                isComplete: !!(settings.company_name && settings.sdr_name && settings.system_prompt_override),
               };
             case 'finish':
               return {
