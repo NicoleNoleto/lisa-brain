@@ -132,7 +132,7 @@ serve(async (req) => {
               if (userId) {
                 const { data } = await supabase
                   .from('nina_settings')
-                  .select('whatsapp_access_token, whatsapp_phone_number_id')
+                  .select('provider, whatsapp_access_token, whatsapp_phone_number_id, evolution_server_url, evolution_instance_name, evolution_api_token')
                   .eq('user_id', userId)
                   .maybeSingle();
                 settingsData = data;
@@ -143,7 +143,7 @@ serve(async (req) => {
                 console.log('[Sender] No user-specific settings, trying global...');
                 const { data } = await supabase
                   .from('nina_settings')
-                  .select('whatsapp_access_token, whatsapp_phone_number_id')
+                  .select('provider, whatsapp_access_token, whatsapp_phone_number_id, evolution_server_url, evolution_instance_name, evolution_api_token')
                   .is('user_id', null)
                   .maybeSingle();
                 settingsData = data;
@@ -167,9 +167,23 @@ serve(async (req) => {
               throw new Error('Settings not found');
             }
 
-            if (!settingsData.whatsapp_access_token || !settingsData.whatsapp_phone_number_id) {
-              console.error('[Sender] WhatsApp not configured in settings');
+            // Validate provider-specific settings
+            const isOfficial = settingsData.provider === 'official' || settingsData.whatsapp_access_token;
+            const isEvolution = settingsData.provider === 'evolution' || settingsData.evolution_server_url;
+
+            if (isOfficial && (!settingsData.whatsapp_access_token || !settingsData.whatsapp_phone_number_id)) {
+              console.error('[Sender] Official WhatsApp not configured in settings');
               throw new Error('WhatsApp not configured');
+            }
+
+            if (isEvolution && (!settingsData.evolution_server_url || !settingsData.evolution_instance_name || !settingsData.evolution_api_token)) {
+              console.error('[Sender] Evolution API not configured in settings');
+              throw new Error('Evolution API not configured');
+            }
+
+            if (!isOfficial && !isEvolution) {
+              console.error('[Sender] No valid WhatsApp provider configured');
+              throw new Error('No WhatsApp provider configured');
             }
 
             settings = settingsData;
