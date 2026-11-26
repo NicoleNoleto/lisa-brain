@@ -284,7 +284,11 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     queueItem.media_url || null
   );
 
-  const whatsappMessageId = response.key?.id || response.messageId;
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to send message');
+  }
+
+  const whatsappMessageId = response.messageId;
   console.log('[Sender] Message sent, WA ID:', whatsappMessageId);
 
   // Update or create message record in database
