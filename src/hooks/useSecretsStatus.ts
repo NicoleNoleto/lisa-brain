@@ -3,13 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { notifyCerebroChanged } from '@/services/cerebroService';
 
-export type SecretName = 'PANEL_TOKEN' | 'NINA_TOOLS_SECRET' | 'GITHUB_BRAIN_TOKEN' | 'ANTHROPIC_API_KEY';
+export type SecretName = 'PANEL_TOKEN' | 'NINA_TOOLS_SECRET' | 'GITHUB_BRAIN_TOKEN' | 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY';
 
 export const SECRET_NAMES: SecretName[] = [
   'PANEL_TOKEN',
   'NINA_TOOLS_SECRET',
   'GITHUB_BRAIN_TOKEN',
   'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
 ];
 
 export type SecretsStatus = Record<SecretName, boolean>;

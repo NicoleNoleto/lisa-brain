@@ -179,6 +179,7 @@ const DEFAULT_NINA_SETTINGS = {
   is_active: true,
   auto_response_enabled: true,
   ai_model_mode: 'flash',
+  ai_provider: 'anthropic',
   timezone: 'America/Sao_Paulo',
   business_hours_start: '09:00:00',
   business_hours_end: '18:00:00',

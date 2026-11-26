@@ -458,6 +458,21 @@ CREATE FUNCTION public.has_role(_user_id uuid, _role public.app_role) RETURNS bo
   SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = _user_id AND role = _role)
 $$;
 
+-- Admin via user_roles ou team_members (inclusive convites ainda sem user_id).
+CREATE FUNCTION public.is_admin_user(_user_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_roles ur
+    WHERE ur.user_id = _user_id AND ur.role = 'admin'::public.app_role
+  ) OR EXISTS (
+    SELECT 1 FROM public.team_members tm
+    JOIN auth.users au ON au.id = _user_id
+    WHERE tm.role = 'admin'::public.member_role
+      AND (tm.user_id = _user_id OR lower(tm.email) = lower(au.email))
+  );
+$$;
+
 
 --
 -- Name: set_secret(text, text); Type: FUNCTION; Schema: public; Owner: -
@@ -934,6 +949,7 @@ CREATE TABLE public.nina_settings (
     whatsapp_business_account_id text,
     user_id uuid,
     brain_provider text DEFAULT 'lovable'::text NOT NULL,
+    ai_provider text DEFAULT 'anthropic'::text NOT NULL,
     openclaw_gateway_url text,
     openclaw_gateway_token text,
     openclaw_model text DEFAULT 'openclaw'::text,
@@ -941,6 +957,7 @@ CREATE TABLE public.nina_settings (
     brain_identity jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT nina_settings_ai_model_mode_check CHECK ((ai_model_mode = ANY (ARRAY['flash'::text, 'pro'::text, 'pro3'::text, 'adaptive'::text]))),
     CONSTRAINT nina_settings_brain_provider_check CHECK ((brain_provider = ANY (ARRAY['lovable'::text, 'openclaw'::text])))
+    ,CONSTRAINT nina_settings_ai_provider_check CHECK ((ai_provider = ANY (ARRAY['anthropic'::text, 'openai'::text])))
 );
 
 
@@ -1008,8 +1025,8 @@ GRANT ALL ON TABLE public.whatsapp_connections TO service_role;
 ALTER TABLE public.whatsapp_connections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "users_own_whatsapp_connections" ON public.whatsapp_connections
-    USING (auth.uid() = owner_user_id)
-    WITH CHECK (auth.uid() = owner_user_id);
+    USING (auth.uid() = owner_user_id OR public.is_admin_user(auth.uid()))
+    WITH CHECK (auth.uid() = owner_user_id OR public.is_admin_user(auth.uid()));
 
 CREATE POLICY "service_role_bypass" ON public.whatsapp_connections
     AS PERMISSIVE

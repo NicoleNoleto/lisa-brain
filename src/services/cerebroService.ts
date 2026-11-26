@@ -6,13 +6,14 @@ import { supabase } from '@/integrations/supabase/client';
  * além de um event-bus leve para o gate da jornada reagir a saves/sync na hora.
  */
 
-export type SecretName = 'PANEL_TOKEN' | 'NINA_TOOLS_SECRET' | 'GITHUB_BRAIN_TOKEN' | 'ANTHROPIC_API_KEY';
+export type SecretName = 'PANEL_TOKEN' | 'NINA_TOOLS_SECRET' | 'GITHUB_BRAIN_TOKEN' | 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY';
 
 export const SECRET_NAMES: SecretName[] = [
   'PANEL_TOKEN',
   'NINA_TOOLS_SECRET',
   'GITHUB_BRAIN_TOKEN',
   'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
 ];
 
 export type SecretsStatus = Record<SecretName, boolean>;
@@ -123,7 +124,7 @@ export interface KeyValidation {
  * Trata 200 com { ok:false } e respostas não-2xx; se a fn não existir/estiver fora,
  * retorna ok:false com mensagem amigável (sem quebrar a UI).
  */
-async function invokeValidate(fn: 'validate-anthropic-key' | 'validate-github-pat'): Promise<KeyValidation> {
+async function invokeValidate(fn: 'validate-anthropic-key' | 'validate-openai-key' | 'validate-github-pat'): Promise<KeyValidation> {
   try {
     const { data, error } = await supabase.functions.invoke(fn);
     if (error) {
@@ -147,4 +148,5 @@ async function invokeValidate(fn: 'validate-anthropic-key' | 'validate-github-pa
 }
 
 export const validateAnthropicKey = (): Promise<KeyValidation> => invokeValidate('validate-anthropic-key');
+export const validateOpenAIKey = (): Promise<KeyValidation> => invokeValidate('validate-openai-key');
 export const validateGithubPat = (): Promise<KeyValidation> => invokeValidate('validate-github-pat');

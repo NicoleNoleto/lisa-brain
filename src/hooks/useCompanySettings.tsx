@@ -34,8 +34,18 @@ export const CompanySettingsProvider: React.FC<{ children: React.ReactNode }> = 
         .select('role')
         .eq('user_id', user.id)
         .maybeSingle();
-      
-      setIsAdmin(roleData?.role === 'admin');
+
+      // Team admins também têm acesso administrativo. O user_id pode ainda não
+      // estar vinculado após um convite, então usamos o e-mail como fallback.
+      const { data: teamAdmin } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('role', 'admin')
+        .or(`user_id.eq.${user.id},email.eq.${user.email ?? ''}`)
+        .limit(1)
+        .maybeSingle();
+
+      setIsAdmin(roleData?.role === 'admin' || !!teamAdmin);
       
       // Fetch global nina_settings via safe public view (no sensitive credentials)
       const { data: viewData, error } = await (supabase as any)

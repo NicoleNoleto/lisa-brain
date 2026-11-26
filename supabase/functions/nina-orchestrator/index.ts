@@ -131,7 +131,10 @@ serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   // Prefer the tenant's current key in Supabase Vault. The environment secret
   // remains only as a backwards-compatible fallback inside getSecret().
-  const anthropicApiKey = await getSecret('ANTHROPIC_API_KEY', { fresh: true });
+  const [anthropicApiKey, openaiApiKey] = await Promise.all([
+    getSecret('ANTHROPIC_API_KEY', { fresh: true }),
+    getSecret('OPENAI_API_KEY', { fresh: true }),
+  ]);
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
@@ -232,6 +235,7 @@ serve(async (req) => {
           auto_response_enabled: true,
           system_prompt_override: null,
           ai_model_mode: 'flash',
+          ai_provider: 'anthropic',
           response_delay_min: 1000,
           response_delay_max: 3000,
           message_breaking_enabled: false,
@@ -271,7 +275,7 @@ serve(async (req) => {
           has_elevenlabs: !!effectiveSettings.elevenlabs_api_key,
         });
         
-        await processQueueItem(supabase, anthropicApiKey, item, systemPrompt, effectiveSettings);
+        await processQueueItem(supabase, anthropicApiKey ?? '', openaiApiKey ?? '', item, systemPrompt, effectiveSettings);
         
         // Mark as completed
         await supabase
@@ -408,9 +412,10 @@ async function callBrain(config: BrainConfig, requestBody: any): Promise<Respons
   const timeoutId = setTimeout(() => controller.abort(), LOVABLE_REQUEST_TIMEOUT_MS);
   try {
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
-      'anthropic-version': '2023-06-01',
+      ...(config.provider === 'anthropic'
+        ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
+        : { 'Authorization': `Bearer ${config.apiKey}` }),
     };
 
     return await fetch(config.url, {
@@ -427,6 +432,7 @@ async function callBrain(config: BrainConfig, requestBody: any): Promise<Respons
 async function processQueueItem(
   supabase: any,
   anthropicApiKey: string,
+  openaiApiKey: string,
   item: any,
   systemPrompt: string,
   settings: any
@@ -680,19 +686,26 @@ async function processQueueItem(
   }
 
   // Get AI config before building request body (needed for tool_choice format)
-  const anthropicConfig = getBrainConfig(
-    { ...settings, brain_provider: 'anthropic' },
-    { anthropicModel: aiSettings.model, anthropicApiKey }
+  const aiConfig = getBrainConfig(
+    { ...settings, brain_provider: 'fallback' },
+    { anthropicModel: aiSettings.model, anthropicApiKey, openaiApiKey }
   );
 
   // Build request body for Anthropic (system prompt as top-level parameter)
-  const requestBody: any = {
-    model: anthropicConfig.model,
-    system: processedPrompt,
-    messages: conversationHistory,
-    temperature: aiSettings.temperature,
-    max_tokens: 1000
-  };
+  const requestBody: any = aiConfig.provider === 'anthropic'
+    ? {
+        model: aiConfig.model,
+        system: processedPrompt,
+        messages: conversationHistory,
+        temperature: aiSettings.temperature,
+        max_tokens: 1000,
+      }
+    : {
+        model: aiConfig.model,
+        messages: [{ role: 'system', content: processedPrompt }, ...conversationHistory],
+        temperature: aiSettings.temperature,
+        max_tokens: 1000,
+      };
 
   // Tools disabled for Anthropic fallback for now (pending OpenClaw fix)
   // TODO: Convert tools to Anthropic format when needed
@@ -706,9 +719,9 @@ async function processQueueItem(
   // }
 
   // Caminho SÍNCRONO: Anthropic (Claude). Fallback quando OpenClaw não está disponível.
-  console.log(`[Nina] Brain provider (sync): ${anthropicConfig.provider}, model: ${anthropicConfig.model}`);
+  console.log(`[Nina] Brain provider (sync): ${aiConfig.provider}, model: ${aiConfig.model}`);
 
-  const aiResponse = await callBrain(anthropicConfig, requestBody);
+  const aiResponse = await callBrain(aiConfig, requestBody);
 
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();

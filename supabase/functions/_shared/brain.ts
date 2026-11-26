@@ -9,7 +9,7 @@
 // Endpoint do Anthropic API
 export const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
-export type BrainProvider = "openclaw" | "anthropic";
+export type BrainProvider = "openclaw" | "anthropic" | "openai";
 
 export interface BrainConfig {
   provider: BrainProvider;
@@ -23,6 +23,7 @@ export interface GetBrainConfigOptions {
   anthropicModel?: string;
   // Chave resolvida pelo Vault; env continua sendo fallback de compatibilidade.
   anthropicApiKey?: string;
+  openaiApiKey?: string;
 }
 
 // Normaliza a URL do OpenClaw para o endpoint OpenAI-compatible.
@@ -46,7 +47,9 @@ export function isOpenClawConfigured(settings: any): boolean {
  * - provider 'anthropic' (padrão): usa ANTHROPIC_API_URL + ANTHROPIC_API_KEY.
  */
 export function getBrainConfig(settings: any, opts: GetBrainConfigOptions = {}): BrainConfig {
-  const provider: BrainProvider = settings?.brain_provider === "openclaw" ? "openclaw" : "anthropic";
+  const provider: BrainProvider = settings?.brain_provider === "openclaw"
+    ? "openclaw"
+    : settings?.ai_provider === "openai" ? "openai" : "anthropic";
 
   if (provider === "openclaw" && isOpenClawConfigured(settings)) {
     return {
@@ -54,6 +57,15 @@ export function getBrainConfig(settings: any, opts: GetBrainConfigOptions = {}):
       url: normalizeOpenClawUrl(settings.openclaw_gateway_url),
       apiKey: String(settings.openclaw_gateway_token).trim(),
       model: (settings.openclaw_model?.trim() || "openclaw"),
+    };
+  }
+
+  if (provider === "openai") {
+    return {
+      provider: "openai",
+      url: "https://api.openai.com/v1/chat/completions",
+      apiKey: opts.openaiApiKey ?? Deno.env.get("OPENAI_API_KEY") ?? "",
+      model: settings?.openai_model?.trim() || "gpt-4o-mini",
     };
   }
 

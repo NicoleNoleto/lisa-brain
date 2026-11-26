@@ -106,7 +106,15 @@ export function useOnboardingStatus(): OnboardingStatus {
         .eq('user_id', user.id)
         .maybeSingle();
       
-      const userIsAdmin = roleData?.role === 'admin';
+      const { data: teamAdmin } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('role', 'admin')
+        .or(`user_id.eq.${user.id},email.eq.${user.email ?? ''}`)
+        .limit(1)
+        .maybeSingle();
+
+      const userIsAdmin = roleData?.role === 'admin' || !!teamAdmin;
       setIsAdmin(userIsAdmin);
 
       // Fetch global nina_settings (no user_id filter)

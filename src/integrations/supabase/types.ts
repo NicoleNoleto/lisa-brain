@@ -856,6 +856,7 @@ export type Database = {
         Row: {
           adaptive_response_enabled: boolean
           ai_model_mode: string | null
+          ai_provider: string
           ai_scheduling_enabled: boolean | null
           async_booking_enabled: boolean | null
           audio_response_enabled: boolean | null
@@ -900,6 +901,7 @@ export type Database = {
         Insert: {
           adaptive_response_enabled?: boolean
           ai_model_mode?: string | null
+          ai_provider?: string
           ai_scheduling_enabled?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
@@ -944,6 +946,7 @@ export type Database = {
         Update: {
           adaptive_response_enabled?: boolean
           ai_model_mode?: string | null
+          ai_provider?: string
           ai_scheduling_enabled?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
