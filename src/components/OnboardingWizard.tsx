@@ -258,14 +258,28 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
           setSdrName(data.sdr_name || '');
 
           // WhatsApp - Load from new whatsapp_connections table (with fallback to legacy nina_settings)
-          const { data: connections } = await (supabase
-            .from('whatsapp_connections') as any)
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(1);
+          let connection = null;
 
-          if (connections && connections.length > 0) {
-            const connection = connections[0];
+          try {
+            // Try to load most recent connection
+            const { data: connections, error: connError } = await (supabase
+              .from('whatsapp_connections') as any)
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(10);
+
+            if (connError) {
+              console.error('[OnboardingWizard] Error loading connections:', connError);
+            } else if (connections && connections.length > 0) {
+              // Find connection for current user, or any connection if single-tenant
+              connection = connections.find((c: any) => c.owner_user_id === user?.id) || connections[0];
+              console.log('[OnboardingWizard] Loaded connection:', connection?.provider, connection?.evolution_instance_name || connection?.official_phone_number_id);
+            }
+          } catch (err) {
+            console.error('[OnboardingWizard] Exception loading connections:', err);
+          }
+
+          if (connection) {
             setWhatsappProvider(connection.provider as 'official' | 'evolution');
 
             if (connection.provider === 'official' && connection.official_access_token) {
