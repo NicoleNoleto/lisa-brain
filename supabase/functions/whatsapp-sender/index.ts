@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendWhatsAppMessage } from "../helpers/whatsapp-connection.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -246,70 +247,30 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     throw new Error('Contact not found');
   }
 
-  const recipient = contact.whatsapp_id || contact.phone_number;
+  const phoneNumber = contact.phone_number;
 
-  // Build WhatsApp API payload
-  let payload: any = {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: recipient
+  // Build connection object from settings (works for both Official and Evolution)
+  const connection = {
+    provider: settings.provider || 'official',
+    official_access_token: settings.whatsapp_access_token,
+    official_phone_number_id: settings.whatsapp_phone_number_id,
+    evolution_server_url: settings.evolution_server_url,
+    evolution_instance_name: settings.evolution_instance_name,
+    evolution_api_token: settings.evolution_api_token,
   };
 
-  switch (queueItem.message_type) {
-    case 'text':
-      payload.type = 'text';
-      payload.text = { body: queueItem.content };
-      break;
-    
-    case 'image':
-      payload.type = 'image';
-      payload.image = { 
-        link: queueItem.media_url,
-        caption: queueItem.content || undefined
-      };
-      break;
-    
-    case 'audio':
-      payload.type = 'audio';
-      payload.audio = { link: queueItem.media_url };
-      break;
-    
-    case 'document':
-      payload.type = 'document';
-      payload.document = { 
-        link: queueItem.media_url,
-        filename: queueItem.content || 'document'
-      };
-      break;
-    
-    default:
-      payload.type = 'text';
-      payload.text = { body: queueItem.content };
-  }
+  console.log(`[Sender] Sending via provider: ${connection.provider}`);
 
-  console.log('[Sender] WhatsApp API payload:', JSON.stringify(payload, null, 2));
-
-  // Send via WhatsApp Cloud API
-  const response = await fetch(
-    `${WHATSAPP_API_URL}/${settings.whatsapp_phone_number_id}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${settings.whatsapp_access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    }
+  // Send via sendWhatsAppMessage (routes to Official or Evolution automatically)
+  const response = await sendWhatsAppMessage(
+    connection,
+    phoneNumber,
+    queueItem.content,
+    queueItem.message_type || 'text',
+    queueItem.media_url || null
   );
 
-  const responseData = await response.json();
-
-  if (!response.ok) {
-    console.error('[Sender] WhatsApp API error:', responseData);
-    throw new Error(responseData.error?.message || 'WhatsApp API error');
-  }
-
-  const whatsappMessageId = responseData.messages?.[0]?.id;
+  const whatsappMessageId = response.key?.id || response.messageId;
   console.log('[Sender] Message sent, WA ID:', whatsappMessageId);
 
   // Update or create message record in database
