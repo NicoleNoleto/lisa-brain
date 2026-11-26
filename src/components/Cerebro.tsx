@@ -12,6 +12,7 @@ import StatusBlock from './cerebro/StatusBlock';
 import TestBlock from './cerebro/TestBlock';
 import ActivateBlock from './cerebro/ActivateBlock';
 import TrainBlock from './cerebro/TrainBlock';
+import { EvolutionStatus } from './cerebro/EvolutionStatus';
 
 const TEXT = {
   title: 'Cérebro',
@@ -89,6 +90,11 @@ const Cerebro: React.FC = () => {
         <div className="space-y-6">
           <TestBlock status={status} />
           <ActivateBlock status={status} />
+
+          <div className="border border-slate-700/50 rounded-lg p-6 bg-slate-800/30">
+            <h4 className="text-sm font-semibold text-white mb-4">🔗 Conexão Evolution API</h4>
+            <EvolutionStatus />
+          </div>
         </div>
       </div>
     </div>
