@@ -179,7 +179,7 @@ async function sendViaEvolution(
   mediaUrl?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const endpoint = messageType === "text" ? "/message/sendText" : "/message/sendAudio";
-  const url = `${connection.evolution_server_url}${endpoint}`;
+  const url = `${connection.evolution_server_url}${endpoint}/${connection.evolution_instance_name}`;
 
   const body = messageType === "text"
     ? {
@@ -187,34 +187,39 @@ async function sendViaEvolution(
         textMessage: {
           text: message,
         },
-        instanceName: connection.evolution_instance_name,
       }
     : {
         number: to,
         audioMessage: {
           media: mediaUrl,
         },
-        instanceName: connection.evolution_instance_name,
       };
+
+  console.log(`[Evolution] Sending to URL: ${url}`);
+  console.log(`[Evolution] Payload:`, JSON.stringify(body));
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "apikey": connection.evolution_api_token, // Official Evolution API uses "apikey" header
+      "apikey": connection.evolution_api_token,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   });
 
+  console.log(`[Evolution] Response status: ${response.status}`);
+
   if (!response.ok) {
     const error = await response.json();
+    console.error(`[Evolution] API error:`, error);
     return {
       success: false,
-      error: `Evolution API error: ${error.message || response.statusText}`,
+      error: `Evolution API error: ${error.message || error.error?.message || response.statusText}`,
     };
   }
 
   const result = await response.json();
+  console.log(`[Evolution] Success response:`, result);
   return {
     success: true,
     messageId: result.key?.id || result.messageId,
