@@ -409,10 +409,11 @@ async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any
     console.log('[Webhook] Evolution event received:', body.event);
 
     // Evolution webhook format:
-    // { event: 'messages.upsert', instance: 'instance-name', data: {...} }
+    // Real webhook: { event: 'messages.upsert', instance: '...', data: { key: {...}, message: {...}, pushName: '...', messageTimestamp: ... } }
+    // Test/grouped: { event: 'messages.upsert', instance: '...', data: { messages: [...] } }
     const { event, instance, data } = body;
 
-    if (event !== 'messages.upsert' || !data?.messages) {
+    if (event !== 'messages.upsert') {
       console.log('[Webhook] Ignoring Evolution event:', event);
       return new Response(JSON.stringify({ status: 'ignored' }), {
         status: 200,
@@ -420,8 +421,32 @@ async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any
       });
     }
 
+    // Support both formats: single message (real webhook) and array (test/grouped)
+    let messages: any[] = [];
+    if (data?.messages && Array.isArray(data.messages)) {
+      // Format: { messages: [...] }
+      messages = data.messages;
+    } else if (data?.key && data?.message !== undefined) {
+      // Format: single message object (real webhook from Evolution)
+      messages = [{
+        id: data.key?.id,
+        from: data.key?.remoteJid,
+        body: data.message?.conversation || '',
+        timestamp: data.messageTimestamp,
+        type: data.messageType || 'text',
+        fromMe: data.key?.fromMe || false,
+        pushName: data.pushName
+      }];
+      console.log('[Webhook] Converted single Evolution message to array format');
+    } else {
+      console.log('[Webhook] Ignoring Evolution event - no messages data');
+      return new Response(JSON.stringify({ status: 'ignored' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const GROUPING_DELAY_MS = 10000;
-    const messages = data.messages;
 
     // Find the connection for this Evolution instance
     const { data: connection } = await supabase
@@ -448,7 +473,7 @@ async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any
         continue;
       }
 
-      const phoneNumber = message.from?.replace('@s.whatsapp.net', '');
+      const phoneNumber = message.from?.replace('@s.whatsapp.net', '').replace('@lid', '');
       const contactName = message.pushName || null;
 
       if (!phoneNumber) {
