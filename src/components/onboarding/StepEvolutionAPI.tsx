@@ -54,8 +54,18 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [showQrSection, setShowQrSection] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const qrSectionRef = useRef<HTMLDivElement | null>(null);
 
   const isFormValid = serverUrl && instanceName && apiToken;
+
+  // Auto-scroll to QR code when it appears
+  useEffect(() => {
+    if (qrCode && qrSectionRef.current) {
+      setTimeout(() => {
+        qrSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  }, [qrCode]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -283,6 +293,7 @@ export const StepEvolutionAPI: React.FC<StepEvolutionAPIProps> = ({
       <AnimatePresence>
         {showQrSection && (
           <motion.div
+            ref={qrSectionRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Search, Filter, MoreHorizontal, UserPlus, MessageSquare, Loader2, Mail, Phone, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './Button';
+import { CreateContactModal } from './CreateContactModal';
 import { api } from '../services/api';
 import { Contact } from '../types';
 
@@ -9,6 +10,7 @@ const Contacts: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -47,6 +49,16 @@ const Contacts: React.FC = () => {
     navigate(`/chat?contact=${encodeURIComponent(contact.phone)}`);
   };
 
+  const handleContactCreated = async () => {
+    // Reload contacts
+    try {
+      const data = await api.fetchContacts();
+      setContacts(data);
+    } catch (error) {
+      console.error("Erro ao recarregar contatos", error);
+    }
+  };
+
   return (
     <div className="p-8 h-full overflow-y-auto bg-slate-950 text-slate-50">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
@@ -54,15 +66,21 @@ const Contacts: React.FC = () => {
           <h2 className="text-3xl font-bold tracking-tight text-white">Contatos</h2>
           <p className="text-sm text-slate-400 mt-1">Gerencie sua base de leads e clientes com inteligência.</p>
         </div>
-        <Button 
-          className="shadow-lg shadow-cyan-500/20 opacity-50 cursor-not-allowed"
-          disabled
-          title="Em breve: Adicionar contato"
+        <Button
+          className="shadow-lg shadow-cyan-500/20"
+          onClick={() => setShowCreateModal(true)}
         >
           <UserPlus className="w-4 h-4 mr-2" />
           Novo Contato
         </Button>
       </div>
+
+      {/* Create Contact Modal */}
+      <CreateContactModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onContactCreated={handleContactCreated}
+      />
 
       {/* Filters Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-4 mb-8 bg-slate-900/50 p-2 rounded-xl border border-slate-800">

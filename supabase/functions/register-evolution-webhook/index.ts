@@ -48,11 +48,17 @@ serve(async (req) => {
           url: webhookUrl,
           webhook_by_events: true,
           events: [
+            // Mensagens
             'messages.upsert',
             'messages.update',
             'messages.delete',
             'send_message',
+            // Contatos
+            'contacts.upsert',
+            'contacts.sync',
+            // Conexão
             'connection.update',
+            // Instância
             'instance.create',
             'instance.delete',
             'instance.logout',

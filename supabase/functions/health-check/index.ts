@@ -10,6 +10,7 @@ interface HealthCheckResult {
   status: 'ok' | 'warning' | 'error';
   message: string;
   details?: Record<string, unknown>;
+  isOptional?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -173,7 +174,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Check business hours configuration
+      // Check business hours configuration (optional)
       const businessHoursConfigured = !!(
         settings.timezone &&
         settings.business_hours_start &&
@@ -192,12 +193,14 @@ Deno.serve(async (req) => {
             end: settings.business_hours_end,
             days: settings.business_days,
           },
+          isOptional: true,
         });
       } else {
         results.push({
           component: 'business_hours',
           status: 'warning',
           message: 'Horário comercial não configurado',
+          isOptional: true,
         });
       }
 
@@ -208,12 +211,14 @@ Deno.serve(async (req) => {
           status: 'ok',
           message: 'ElevenLabs configurado para respostas em áudio',
           details: { audioEnabled: settings.audio_response_enabled },
+          isOptional: true,
         });
       } else {
         results.push({
           component: 'elevenlabs',
           status: 'warning',
           message: 'ElevenLabs não configurado (opcional - respostas em áudio)',
+          isOptional: true,
         });
       }
 
@@ -257,7 +262,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 4. Check tag_definitions (single-tenant - no user_id filter)
+    // 4. Check tag_definitions (single-tenant - no user_id filter) - OPTIONAL
     console.log('[health-check] Checking tag_definitions...');
     const { data: tags, error: tagsError } = await supabase
       .from('tag_definitions')
@@ -269,12 +274,14 @@ Deno.serve(async (req) => {
         component: 'tag_definitions',
         status: 'error',
         message: 'Erro ao verificar tags: ' + tagsError.message,
+        isOptional: true,
       });
     } else if (!tags || tags.length === 0) {
       results.push({
         component: 'tag_definitions',
         status: 'warning',
         message: 'Nenhuma tag configurada',
+        isOptional: true,
       });
     } else {
       results.push({
@@ -282,10 +289,11 @@ Deno.serve(async (req) => {
         status: 'ok',
         message: `${tags.length} tags configuradas`,
         details: { count: tags.length },
+        isOptional: true,
       });
     }
 
-    // 5. Check teams (single-tenant - no user_id filter)
+    // 5. Check teams (single-tenant - no user_id filter) - OPTIONAL
     console.log('[health-check] Checking teams...');
     const { data: teams, error: teamsError } = await supabase
       .from('teams')
@@ -297,12 +305,14 @@ Deno.serve(async (req) => {
         component: 'teams',
         status: 'error',
         message: 'Erro ao verificar equipes: ' + teamsError.message,
+        isOptional: true,
       });
     } else if (!teams || teams.length === 0) {
       results.push({
         component: 'teams',
         status: 'warning',
         message: 'Nenhuma equipe configurada',
+        isOptional: true,
       });
     } else {
       results.push({
@@ -310,13 +320,14 @@ Deno.serve(async (req) => {
         status: 'ok',
         message: `${teams.length} equipes configuradas`,
         details: { count: teams.length, teams: teams.map(t => t.name) },
+        isOptional: true,
       });
     }
 
-    // Calculate overall status
+    // Calculate overall status (only count non-optional warnings)
     const hasErrors = results.some(r => r.status === 'error');
-    const hasWarnings = results.some(r => r.status === 'warning');
-    const overallStatus = hasErrors ? 'error' : hasWarnings ? 'warning' : 'ok';
+    const hasRequiredWarnings = results.some(r => r.status === 'warning' && !r.isOptional);
+    const overallStatus = hasErrors ? 'error' : hasRequiredWarnings ? 'warning' : 'ok';
 
     console.log('[health-check] Complete:', { overallStatus, results });
 

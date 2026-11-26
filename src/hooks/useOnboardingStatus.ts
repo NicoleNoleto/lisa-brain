@@ -45,36 +45,43 @@ export function useOnboardingStatus(): OnboardingStatus {
       isRequired: true,
     },
     {
+      id: 'whatsapp_config',
+      title: '3. Configurar WhatsApp',
+      description: 'Configure suas credenciais ou escaneie o QR Code',
+      isComplete: false,
+      isRequired: true,
+    },
+    {
       id: 'agent',
-      title: '3. Agente',
+      title: '4. Agente',
       description: 'Configure o prompt e comportamento do agente',
       isComplete: false,
       isRequired: true,
     },
     {
       id: 'elevenlabs',
-      title: '4. ElevenLabs',
+      title: '5. ElevenLabs',
       description: 'Configure respostas em áudio (opcional)',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'business_hours',
-      title: '5. Horário Comercial',
+      title: '6. Horário Comercial',
       description: 'Configure o horário de atendimento',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'verification',
-      title: '6. Verificação',
+      title: '7. Verificação',
       description: 'Verifique se o sistema está configurado',
       isComplete: false,
       isRequired: false,
     },
     {
       id: 'finish',
-      title: '7. Finalização',
+      title: '8. Finalização',
       description: 'Revise e teste sua configuração',
       isComplete: false,
       isRequired: false,
@@ -124,6 +131,12 @@ export function useOnboardingStatus(): OnboardingStatus {
                 isComplete: !!(settings.company_name && settings.sdr_name),
               };
             case 'whatsapp_provider':
+              // Completo quando provider foi selecionado (será finalizado no próximo step)
+              return {
+                ...step,
+                isComplete: false, // Marca como incompleto até que whatsapp_config esteja completo
+              };
+            case 'whatsapp_config':
               // Completo se tiver WhatsApp Oficial OU Evolution configurado
               const hasOfficialWhatsApp = !!(settings.whatsapp_access_token && settings.whatsapp_phone_number_id && (settings as any).whatsapp_business_account_id);
               const hasEvolutionLegacy = !!(settings as any).evolution_instance_name || !!(settings as any).evolution_api_key;

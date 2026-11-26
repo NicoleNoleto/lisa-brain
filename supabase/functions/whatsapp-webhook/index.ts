@@ -60,7 +60,12 @@ serve(async (req) => {
 
       if (body.event && body.instance) {
         // Evolution API format detected
-        return await handleEvolutionWebhook(body, supabase, corsHeaders);
+        // Route to specific handler based on event type
+        if (body.event.startsWith('contacts.')) {
+          return await handleEvolutionContactEvent(body, supabase, corsHeaders);
+        } else {
+          return await handleEvolutionWebhook(body, supabase, corsHeaders);
+        }
       } else if (body.entry?.[0]?.changes?.[0]?.value) {
         // Official WhatsApp API format detected
         return await handleOfficialWebhook(body, supabase, corsHeaders);
@@ -624,6 +629,113 @@ async function handleEvolutionWebhook(body: any, supabase: any, corsHeaders: any
     console.error('[Webhook] Evolution handler error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Handler for Evolution API contact events (contacts.upsert, contacts.sync)
+async function handleEvolutionContactEvent(body: any, supabase: any, corsHeaders: any) {
+  try {
+    console.log('[Webhook] Evolution contact event received:', body.event);
+
+    // Evolution contact webhook format:
+    // { event: 'contacts.upsert', instance: 'instance-name', data: {...} }
+    const { event, instance, data } = body;
+
+    if (!data?.contacts) {
+      console.log('[Webhook] Contact event missing contacts data:', event);
+      return new Response(JSON.stringify({ status: 'ignored' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Find the connection for this Evolution instance
+    const { data: connection, error: connError } = await supabase
+      .from('whatsapp_connections')
+      .select('*')
+      .eq('provider', 'evolution')
+      .eq('evolution_instance_name', instance)
+      .maybeSingle();
+
+    if (connError) {
+      console.error('[Webhook] Error finding connection:', connError);
+      return new Response(JSON.stringify({ status: 'error', error: connError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!connection) {
+      console.warn('[Webhook] Evolution instance not found:', instance);
+      return new Response(JSON.stringify({ status: 'instance_not_found' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const contacts = data.contacts || [];
+    console.log(`[Webhook] Processing ${contacts.length} contact(s) from ${event}...`);
+
+    let upsertedCount = 0;
+
+    for (const contactData of contacts) {
+      try {
+        const phoneNumber = contactData.jid?.replace('@s.whatsapp.net', '') || contactData.number?.toString();
+        const contactName = contactData.pushName || contactData.name || null;
+
+        if (!phoneNumber) {
+          console.warn('[Webhook] Contact missing phone number:', contactData);
+          continue;
+        }
+
+        console.log(`[Webhook] Processing contact: ${phoneNumber} (${contactName || 'no name'})`);
+
+        // Upsert contact (create if not exists, update if exists)
+        const { data: upsertedContact, error: upsertError } = await supabase
+          .from('contacts')
+          .upsert(
+            {
+              phone_number: phoneNumber,
+              whatsapp_id: `${phoneNumber}@s.whatsapp.net`,
+              name: contactName,
+              call_name: contactName?.split(' ')[0] || null,
+              user_id: null, // Single-tenant
+              last_activity: new Date().toISOString(),
+              is_business: false,
+              tags: [],
+            },
+            {
+              onConflict: 'phone_number', // Update if phone_number exists
+            }
+          )
+          .select()
+          .single();
+
+        if (upsertError) {
+          console.error('[Webhook] Error upserting contact:', upsertError);
+          continue;
+        }
+
+        console.log('[Webhook] ✓ Contact upserted:', upsertedContact.id, `(${upsertedContact.name || 'no name'})`);
+        upsertedCount++;
+      } catch (err) {
+        console.error('[Webhook] Exception processing contact:', err);
+        continue;
+      }
+    }
+
+    console.log(`[Webhook] ✓ Finished processing contacts event: ${upsertedCount}/${contacts.length} upserted`);
+
+    return new Response(
+      JSON.stringify({ status: 'processed', upserted_count: upsertedCount }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('[Webhook] Contact event handler error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

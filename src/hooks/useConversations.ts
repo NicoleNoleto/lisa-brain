@@ -260,28 +260,36 @@ export function useConversations() {
         } else if (status === 'CHANNEL_ERROR') {
           console.error('[Realtime] ❌ Error connecting to messages channel:', err);
           setRealtimeConnected(false);
+          toast.error('⚠️ Conexão em tempo real perdida - usando polling de fallback');
           // Start polling fallback
           if (!pollingIntervalRef.current) {
-            console.log('[Realtime] 🔄 Starting polling fallback (every 10s)...');
+            console.log('[Realtime] 🔄 Starting aggressive polling fallback (every 15s)...');
+            // Immediate first fetch
+            fetchConversations();
+            // Then poll every 15 seconds
             pollingIntervalRef.current = setInterval(() => {
-              console.log('[Realtime] 📡 Polling for updates...');
+              console.log('[Realtime] 📡 Polling for new messages...');
               fetchConversations();
-            }, 10000);
+            }, 15000);
           }
-          // Also attempt immediate fetch
-          setTimeout(() => fetchConversations(), 2000);
         } else if (status === 'TIMED_OUT') {
           console.warn('[Realtime] ⚠️ Connection timed out');
           setRealtimeConnected(false);
+          toast.warning('⏱️ Conexão em tempo real expirou - sincronizando...');
           // Start polling fallback
           if (!pollingIntervalRef.current) {
             console.log('[Realtime] 🔄 Starting polling fallback after timeout...');
+            // Immediate fetch
+            fetchConversations();
+            // Poll every 15 seconds
             pollingIntervalRef.current = setInterval(() => {
               console.log('[Realtime] 📡 Polling for updates...');
               fetchConversations();
-            }, 10000);
+            }, 15000);
+          } else {
+            // Attempt immediate fetch even if polling already running
+            fetchConversations();
           }
-          setTimeout(() => fetchConversations(), 3000);
         }
       });
 

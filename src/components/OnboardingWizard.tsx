@@ -561,11 +561,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
       // Step 4.5: Save WhatsApp connection to whatsapp_connections table
       if (whatsappProvider) {
         console.log(`[OnboardingWizard] Step 4.5: Saving WhatsApp connection (provider: ${whatsappProvider})...`);
+        console.log(`[OnboardingWizard] Auth user ID: ${user.id}`);
 
         const whatsappConnectionData = {
           provider: whatsappProvider,
           is_active: true,
-          owner_user_id: user.id,
+          owner_user_id: user.id,  // ✅ Deve ser igual a auth.uid()
           ...(whatsappProvider === 'official' && {
             official_access_token: accessToken?.trim() || null,
             official_phone_number_id: phoneNumberId?.trim() || null,
@@ -583,34 +584,76 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         };
 
         // Check if connection already exists
-        const { data: existingConnection } = await (supabase
+        const { data: existingConnection, error: fetchError } = await (supabase
           .from('whatsapp_connections') as any)
           .select('id')
           .eq('provider', whatsappProvider)
+          .eq('owner_user_id', user.id)
           .maybeSingle();
+
+        if (fetchError) {
+          console.error('[OnboardingWizard] ❌ Error checking existing connection:', fetchError);
+          console.error('[OnboardingWizard] RLS Policy Error Details:', {
+            code: fetchError.code,
+            message: fetchError.message,
+            details: (fetchError as any).details,
+          });
+          toast.error(`Erro ao verificar conexão existente: ${fetchError.message}`);
+          return false;
+        }
 
         if (existingConnection) {
           // Update existing
-          const { error: updateError } = await (supabase
+          console.log('[OnboardingWizard] Updating existing connection ID:', existingConnection.id);
+          const { error: updateError, data: updateData } = await (supabase
             .from('whatsapp_connections') as any)
             .update(whatsappConnectionData)
-            .eq('id', existingConnection.id);
+            .eq('id', existingConnection.id)
+            .eq('owner_user_id', user.id)  // ✅ Adicionar filtro de owner para RLS
+            .select();
 
           if (updateError) {
             console.error('[OnboardingWizard] ❌ Error updating WhatsApp connection:', updateError);
+            console.error('[OnboardingWizard] RLS Policy Error Details:', {
+              code: updateError.code,
+              message: updateError.message,
+              details: (updateError as any).details,
+              hint: (updateError as any).hint,
+            });
+            toast.error(`Erro ao atualizar conexão: ${updateError.message}`);
+            return false;
           } else {
-            console.log('[OnboardingWizard] ✓ WhatsApp connection updated');
+            console.log('[OnboardingWizard] ✓ WhatsApp connection updated:', updateData);
+            toast.success('Conexão Evolution atualizada com sucesso!');
           }
         } else {
           // Insert new
-          const { error: insertError } = await (supabase
+          console.log('[OnboardingWizard] Inserting new WhatsApp connection...');
+          const { error: insertError, data: insertData } = await (supabase
             .from('whatsapp_connections') as any)
-            .insert(whatsappConnectionData);
+            .insert(whatsappConnectionData)
+            .select();
 
           if (insertError) {
             console.error('[OnboardingWizard] ❌ Error inserting WhatsApp connection:', insertError);
+            console.error('[OnboardingWizard] RLS Policy Error Details:', {
+              code: insertError.code,
+              message: insertError.message,
+              details: (insertError as any).details,
+              hint: (insertError as any).hint,
+            });
+
+            // Detectar erro de RLS policy
+            if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
+              toast.error('Erro de permissão ao salvar conexão. Verifique as políticas de segurança.');
+              console.error('[OnboardingWizard] RLS Policy Violation - Expected error on INSERT/UPDATE');
+            } else {
+              toast.error(`Erro ao criar conexão: ${insertError.message}`);
+            }
+            return false;
           } else {
-            console.log('[OnboardingWizard] ✓ WhatsApp connection created');
+            console.log('[OnboardingWizard] ✓ WhatsApp connection created:', insertData);
+            toast.success('Conexão Evolution criada com sucesso!');
           }
         }
 
@@ -759,6 +802,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
     return ['elevenlabs', 'business_hours'].includes(stepId);
   };
 
+  const handleProviderSelected = async (provider: 'official' | 'evolution') => {
+    setWhatsappProvider(provider);
+    setDirection(1);
+    setActiveStep(activeStep + 1);
+  };
+
   const renderStep = () => {
     switch (activeStep) {
       case 0:
@@ -774,7 +823,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         return (
           <StepWhatsAppProvider
             selectedProvider={whatsappProvider}
-            onProviderSelect={setWhatsappProvider}
+            onProviderSelect={handleProviderSelected}
           />
         );
       case 2:
