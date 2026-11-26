@@ -169,6 +169,43 @@ async function sendViaOfficial(
 }
 
 /**
+ * Normalize phone number to Evolution API format: country code + area code + 9 + number
+ * Example: "11999999999" or "11 99999999" -> "5511999999999"
+ */
+function normalizePhoneNumber(phone: string): string {
+  // Remove all non-digits
+  const cleaned = phone.replace(/\D/g, '');
+
+  // If already has country code (55), use as is
+  if (cleaned.startsWith('55')) {
+    // Check if needs the '9' for mobile (11 digits after 55 means it needs 9)
+    if (cleaned.length === 12) {
+      // Format: 55 + 11 (DDD) + 8 digits - needs 9 for mobile
+      return cleaned.slice(0, 4) + '9' + cleaned.slice(4);
+    }
+    return cleaned;
+  }
+
+  // If starts with 0, it's a Brazilian number without country code
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1);
+  }
+
+  // If 10 digits (DDD + 8), add 9 for mobile
+  if (cleaned.length === 10) {
+    return '55' + cleaned.slice(0, 2) + '9' + cleaned.slice(2);
+  }
+
+  // If 11 digits (DDD + 9 + 8), just add country code
+  if (cleaned.length === 11) {
+    return '55' + cleaned;
+  }
+
+  // Return as-is with country code if not matching patterns
+  return '55' + cleaned;
+}
+
+/**
  * Send message via Evolution API
  */
 async function sendViaEvolution(
@@ -180,21 +217,23 @@ async function sendViaEvolution(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const endpoint = messageType === "text" ? "/message/sendText" : "/message/sendAudio";
   const url = `${connection.evolution_server_url}${endpoint}/${connection.evolution_instance_name}`;
+  const normalizedNumber = normalizePhoneNumber(to);
 
   const body = messageType === "text"
     ? {
-        number: to,
+        number: normalizedNumber,
         textMessage: {
           text: message,
         },
       }
     : {
-        number: to,
+        number: normalizedNumber,
         audioMessage: {
           media: mediaUrl,
         },
       };
 
+  console.log(`[Evolution] Original number: ${to} -> Normalized: ${normalizedNumber}`);
   console.log(`[Evolution] Sending to URL: ${url}`);
   console.log(`[Evolution] Payload:`, JSON.stringify(body));
 
