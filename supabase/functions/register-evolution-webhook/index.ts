@@ -14,7 +14,11 @@ serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+      },
     });
   }
 
@@ -24,7 +28,14 @@ serve(async (req) => {
     if (!evolutionServerUrl || !evolutionInstanceName || !evolutionApiToken) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: evolutionServerUrl, evolutionInstanceName, evolutionApiToken' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+          }
+        }
       );
     }
 
@@ -84,7 +95,11 @@ serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        },
       }
     );
   } catch (error) {
@@ -95,7 +110,11 @@ serve(async (req) => {
       }),
       {
         status: 500,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        },
       }
     );
   }
