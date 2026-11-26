@@ -128,7 +128,7 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+  const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
@@ -268,7 +268,7 @@ serve(async (req) => {
           has_elevenlabs: !!effectiveSettings.elevenlabs_api_key,
         });
         
-        await processQueueItem(supabase, lovableApiKey, item, systemPrompt, effectiveSettings);
+        await processQueueItem(supabase, anthropicApiKey, item, systemPrompt, effectiveSettings);
         
         // Mark as completed
         await supabase
@@ -404,12 +404,15 @@ async function callBrain(config: BrainConfig, requestBody: any): Promise<Respons
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), LOVABLE_REQUEST_TIMEOUT_MS);
   try {
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+    };
+
     return await fetch(config.url, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
@@ -420,7 +423,7 @@ async function callBrain(config: BrainConfig, requestBody: any): Promise<Respons
 
 async function processQueueItem(
   supabase: any,
-  lovableApiKey: string,
+  anthropicApiKey: string,
   item: any,
   systemPrompt: string,
   settings: any
@@ -657,7 +660,7 @@ async function processQueueItem(
   }
   // ────────────────────────────────────────────────────────────────────────────
 
-  console.log('[Nina] Calling Lovable AI...');
+  console.log('[Nina] Calling AI (via provider fallback)...');
 
   // Get AI model settings based on user configuration
   const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
@@ -673,48 +676,36 @@ async function processQueueItem(
     console.log('[Nina] AI scheduling enabled, adding appointment tools (create, reschedule, cancel)');
   }
 
-  // Build request body
+  // Get AI config before building request body (needed for tool_choice format)
+  const anthropicConfig = getBrainConfig(
+    { ...settings, brain_provider: 'anthropic' },
+    { anthropicModel: aiSettings.model }
+  );
+
+  // Build request body for Anthropic (system prompt as top-level parameter)
   const requestBody: any = {
-    model: aiSettings.model,
-    messages: [
-      { role: 'system', content: processedPrompt },
-      ...conversationHistory
-    ],
+    model: anthropicConfig.model,
+    system: processedPrompt,
+    messages: conversationHistory,
     temperature: aiSettings.temperature,
     max_tokens: 1000
   };
 
-  // Only add tools if we have any
-  if (tools.length > 0) {
-    requestBody.tools = tools;
-    requestBody.tool_choice = "auto";
+  // Tools disabled for Anthropic fallback for now (pending OpenClaw fix)
+  // TODO: Convert tools to Anthropic format when needed
+  // if (tools.length > 0) {
+  //   requestBody.tools = tools.map((tool: any) => ({...}));
+  //   requestBody.tool_choice = { type: "auto" };
+  //   const systemMsg = requestBody.messages[0];
+  //   if (typeof systemMsg?.content === 'string' && !systemMsg.content.includes('create_appointment')) {
+  //     systemMsg.content += '\n\n<tool_usage_protocol>...';
+  //   }
+  // }
 
-    // GAP2: as tools só são chamadas se o system prompt mandar usá-las. O prompt
-    // default já traz <tool_usage_protocol>, mas uma persona custom
-    // (system_prompt_override) pode não ter -> anexa uma instrução curta SÓ
-    // quando o prompt ainda não menciona as tools (evita duplicar). Este trecho
-    // só roda no caminho síncrono Lovable/fallback (o ramo openclaw já retornou).
-    const systemMsg = requestBody.messages[0];
-    if (typeof systemMsg?.content === 'string' && !systemMsg.content.includes('create_appointment')) {
-      systemMsg.content += '\n\n<tool_usage_protocol>\n' +
-        'Quando o lead combinar/confirmar um horário, use a tool create_appointment; ' +
-        'para mudar, reschedule_appointment; para cancelar, cancel_appointment. ' +
-        'Só confirme o agendamento/reagendamento/cancelamento após a tool retornar sucesso.\n' +
-        '</tool_usage_protocol>';
-    }
-  }
+  // Caminho SÍNCRONO: Anthropic (Claude). Fallback quando OpenClaw não está disponível.
+  console.log(`[Nina] Brain provider (sync): ${anthropicConfig.provider}, model: ${anthropicConfig.model}`);
 
-  // Caminho SÍNCRONO: Lovable AI. Só chega aqui no modo lovable OU no fallback
-  // do openclaw (sem instance ativa) — ambos usam o Lovable. O modelo continua
-  // vindo de getModelSettings (aiSettings.model).
-  const lovableConfig = getBrainConfig(
-    { ...settings, brain_provider: 'lovable' },
-    { lovableModel: aiSettings.model, lovableApiKey }
-  );
-  requestBody.model = lovableConfig.model;
-  console.log(`[Nina] Brain provider (sync): ${lovableConfig.provider}, model: ${lovableConfig.model}`);
-
-  const aiResponse = await callBrain(lovableConfig, requestBody);
+  const aiResponse = await callBrain(anthropicConfig, requestBody);
 
   if (!aiResponse.ok) {
     const errorText = await aiResponse.text();
@@ -888,6 +879,7 @@ async function processQueueItem(
             message_type: 'audio',
             media_url: audioUrl,
             priority: 1,
+            status: 'pending',
             scheduled_at: new Date(Date.now() + delay).toISOString(),
             metadata: {
               response_to_message_id: message.id,
@@ -920,15 +912,21 @@ async function processQueueItem(
   try {
     const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
     console.log('[Nina] Triggering whatsapp-sender at:', senderUrl);
-    
-    fetch(senderUrl, {
+
+    const senderResponse = await fetch(senderUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseServiceKey}`
       },
       body: JSON.stringify({ triggered_by: 'nina-orchestrator' })
-    }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    });
+
+    if (!senderResponse.ok) {
+      console.error('[Nina] whatsapp-sender returned:', senderResponse.status, await senderResponse.text());
+    } else {
+      console.log('[Nina] whatsapp-sender triggered successfully');
+    }
   } catch (err) {
     console.error('[Nina] Failed to trigger whatsapp-sender:', err);
   }
@@ -981,6 +979,7 @@ async function queueTextResponse(
         from_type: 'nina',
         message_type: 'text',
         priority: 1,
+        status: 'pending',
         scheduled_at: new Date(Date.now() + chunkDelay).toISOString(),
         metadata: {
           response_to_message_id: message.id,
@@ -1226,29 +1225,29 @@ function getModelSettings(
   clientMemory: any
 ): { model: string; temperature: number } {
   const modelMode = settings?.ai_model_mode || 'flash';
-  
+
   switch (modelMode) {
     case 'flash':
-      return { model: 'google/gemini-2.5-flash', temperature: 0.7 };
+      return { model: 'claude-haiku-4-5', temperature: 0.7 };
     case 'pro':
-      return { model: 'google/gemini-2.5-pro', temperature: 0.7 };
+      return { model: 'claude-haiku-4-5', temperature: 0.7 };
     case 'pro3':
-      return { model: 'google/gemini-3-pro-preview', temperature: 0.7 };
+      return { model: 'claude-haiku-4-5', temperature: 0.7 };
     case 'adaptive':
       return getAdaptiveSettings(conversationHistory, message, contact, clientMemory);
     default:
-      return { model: 'google/gemini-2.5-flash', temperature: 0.7 };
+      return { model: 'claude-haiku-4-5', temperature: 0.7 };
   }
 }
 
 function getAdaptiveSettings(
-  conversationHistory: any[], 
-  message: any, 
+  conversationHistory: any[],
+  message: any,
   contact: any,
   clientMemory: any
 ): { model: string; temperature: number } {
   const defaultSettings = {
-    model: 'google/gemini-2.5-flash',
+    model: 'claude-haiku-4-5',
     temperature: 0.7
   };
 
@@ -1270,35 +1269,35 @@ function getAdaptiveSettings(
 
   if (isComplaint || isUrgent) {
     return {
-      model: 'google/gemini-2.5-pro',
+      model: 'claude-haiku-4-5',
       temperature: 0.3
     };
   }
 
   if (isSales && qualificationScore > 50) {
     return {
-      model: 'google/gemini-2.5-flash',
+      model: 'claude-haiku-4-5',
       temperature: 0.5
     };
   }
 
   if (isTechnical) {
     return {
-      model: 'google/gemini-2.5-pro',
+      model: 'claude-haiku-4-5',
       temperature: 0.4
     };
   }
 
   if (messageCount < 5) {
     return {
-      model: 'google/gemini-2.5-flash',
+      model: 'claude-haiku-4-5',
       temperature: 0.8
     };
   }
 
   if (messageCount > 15) {
     return {
-      model: 'google/gemini-2.5-flash',
+      model: 'claude-haiku-4-5',
       temperature: 0.5
     };
   }
