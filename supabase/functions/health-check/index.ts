@@ -36,25 +36,7 @@ Deno.serve(async (req) => {
 
     const results: HealthCheckResult[] = [];
 
-    // 1. Check LOVABLE_API_KEY
-    console.log('[health-check] Checking LOVABLE_API_KEY...');
-    if (lovableApiKey && lovableApiKey.length > 10) {
-      results.push({
-        component: 'lovable_api_key',
-        status: 'ok',
-        message: 'LOVABLE_API_KEY está configurada',
-        details: { configured: true },
-      });
-    } else {
-      results.push({
-        component: 'lovable_api_key',
-        status: 'error',
-        message: 'LOVABLE_API_KEY não está configurada. A IA não funcionará.',
-        details: { configured: false },
-      });
-    }
-
-    // 2. Check nina_settings com fallback triplo
+    // Check nina_settings com fallback triplo
     console.log('[health-check] Checking nina_settings...');
     let settings = null;
     let settingsError = null;
@@ -107,34 +89,46 @@ Deno.serve(async (req) => {
         message: 'Configurações não encontradas. Execute o onboarding.',
       });
     } else {
-      // Check WhatsApp configuration
-      const whatsappConfigured = !!(
+      // Check WhatsApp configuration (Official or Evolution)
+      const hasOfficialWhatsApp = !!(
         settings.whatsapp_access_token &&
         settings.whatsapp_phone_number_id
       );
 
-      if (whatsappConfigured) {
+      // Check Evolution connection from whatsapp_connections table
+      let hasEvolutionConnected = false;
+      try {
+        const { data: connections } = await (supabase
+          .from('whatsapp_connections') as any)
+          .select('*')
+          .eq('provider', 'evolution')
+          .eq('evolution_connection_status', 'connected')
+          .maybeSingle();
+        hasEvolutionConnected = !!connections;
+      } catch (err) {
+        console.log('[health-check] Could not fetch Evolution connection:', err);
+      }
+
+      if (hasOfficialWhatsApp || hasEvolutionConnected) {
+        const provider = hasOfficialWhatsApp ? 'Official API' : 'Evolution';
         results.push({
           component: 'whatsapp',
           status: 'ok',
-          message: 'WhatsApp está configurado',
+          message: `WhatsApp está configurado (${provider})`,
           details: {
-            hasAccessToken: !!settings.whatsapp_access_token,
-            hasPhoneNumberId: !!settings.whatsapp_phone_number_id,
-            hasBusinessAccountId: !!settings.whatsapp_business_account_id,
-            hasVerifyToken: !!settings.whatsapp_verify_token,
+            provider,
+            hasOfficialWhatsApp,
+            hasEvolutionConnected,
           },
         });
       } else {
         results.push({
           component: 'whatsapp',
           status: 'warning',
-          message: 'WhatsApp não está totalmente configurado',
+          message: 'WhatsApp não está configurado. Configure Official API ou Evolution.',
           details: {
-            hasAccessToken: !!settings.whatsapp_access_token,
-            hasPhoneNumberId: !!settings.whatsapp_phone_number_id,
-            hasBusinessAccountId: !!settings.whatsapp_business_account_id,
-            hasVerifyToken: !!settings.whatsapp_verify_token,
+            hasOfficialWhatsApp,
+            hasEvolutionConnected,
           },
         });
       }

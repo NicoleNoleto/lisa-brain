@@ -103,9 +103,11 @@ serve(async (req) => {
         });
       }
 
-      // Check WhatsApp
+      // Check WhatsApp (Official or Evolution)
+      let whatsappConnected = false;
+
       if (settings.whatsapp_access_token && settings.whatsapp_phone_number_id) {
-        // Test WhatsApp API connection
+        // Test WhatsApp Official API connection
         try {
           const waResponse = await fetch(
             `https://graph.facebook.com/v18.0/${settings.whatsapp_phone_number_id}`,
@@ -113,19 +115,20 @@ serve(async (req) => {
               headers: { Authorization: `Bearer ${settings.whatsapp_access_token}` },
             }
           );
-          
+
           if (waResponse.ok) {
             const waData = await waResponse.json();
             results.push({
               component: 'whatsapp',
               status: 'ok',
-              message: `WhatsApp conectado: ${waData.display_phone_number || 'Ativo'}`,
+              message: `WhatsApp conectado (Official): ${waData.display_phone_number || 'Ativo'}`,
             });
+            whatsappConnected = true;
           } else {
             results.push({
               component: 'whatsapp',
               status: 'error',
-              message: 'Token do WhatsApp inválido ou expirado',
+              message: 'Token do WhatsApp Official inválido ou expirado',
               details: 'Verifique as credenciais no Facebook Developer',
             });
           }
@@ -133,17 +136,43 @@ serve(async (req) => {
           results.push({
             component: 'whatsapp',
             status: 'warning',
-            message: 'Não foi possível validar WhatsApp',
+            message: 'Não foi possível validar WhatsApp Official',
             details: 'Erro de conexão com a API',
           });
         }
       } else {
-        results.push({
-          component: 'whatsapp',
-          status: 'error',
-          message: 'WhatsApp não configurado',
-          details: 'Configure o token e Phone Number ID',
-        });
+        // Check Evolution connection
+        try {
+          const { data: connections } = await (supabase
+            .from('whatsapp_connections') as any)
+            .select('*')
+            .eq('provider', 'evolution')
+            .eq('evolution_connection_status', 'connected')
+            .maybeSingle();
+
+          if (connections) {
+            results.push({
+              component: 'whatsapp',
+              status: 'ok',
+              message: `WhatsApp conectado (Evolution): ${connections.evolution_instance_name}`,
+            });
+            whatsappConnected = true;
+          } else {
+            results.push({
+              component: 'whatsapp',
+              status: 'error',
+              message: 'WhatsApp não configurado',
+              details: 'Configure Official API ou Evolution',
+            });
+          }
+        } catch (e) {
+          results.push({
+            component: 'whatsapp',
+            status: 'error',
+            message: 'WhatsApp não configurado',
+            details: 'Configure Official API ou Evolution',
+          });
+        }
       }
 
       // Check Agent Prompt
@@ -214,24 +243,7 @@ serve(async (req) => {
       }
     }
 
-    // 2. Check Lovable AI Key
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (lovableApiKey && lovableApiKey.length > 10) {
-      results.push({
-        component: 'lovable_ai',
-        status: 'ok',
-        message: 'Lovable AI configurada',
-      });
-    } else {
-      results.push({
-        component: 'lovable_ai',
-        status: 'error',
-        message: 'LOVABLE_API_KEY não configurada',
-        details: 'A IA não funcionará sem esta chave',
-      });
-    }
-
-    // 3. Check Pipeline Stages (single-tenant - no user_id filter)
+    // 2. Check Pipeline Stages (single-tenant - no user_id filter)
     const { count: stagesCount } = await supabase
       .from('pipeline_stages')
       .select('*', { count: 'exact', head: true })
