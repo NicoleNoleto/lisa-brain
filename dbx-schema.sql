@@ -1011,6 +1011,13 @@ CREATE POLICY "users_own_whatsapp_connections" ON public.whatsapp_connections
     USING (auth.uid() = owner_user_id)
     WITH CHECK (auth.uid() = owner_user_id);
 
+CREATE POLICY "service_role_bypass" ON public.whatsapp_connections
+    AS PERMISSIVE
+    FOR ALL
+    USING (true)
+    WITH CHECK (true)
+    TO service_role;
+
 
 --
 -- Name: nina_test_results; Type: TABLE; Schema: public; Owner: -

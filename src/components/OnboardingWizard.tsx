@@ -551,6 +551,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         const whatsappConnectionData = {
           provider: whatsappProvider,
           is_active: true,
+          owner_user_id: user.id,
           ...(whatsappProvider === 'official' && {
             official_access_token: accessToken?.trim() || null,
             official_phone_number_id: phoneNumberId?.trim() || null,
